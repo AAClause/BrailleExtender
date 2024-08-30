@@ -435,11 +435,13 @@ def getExtendedSymbols(locale):
 		locale = languageHandler.getLanguage()
 	if '_' in locale:
 		try:
-			b, u = characterProcessing._getSpeechSymbolsForLocale(locale)
+			symbolsForLocale = characterProcessing._getSpeechSymbolsForLocale(locale)
 		except LookupError:
 			return getExtendedSymbols(locale.split('_')[0])
 	else:
-		b, u = characterProcessing._getSpeechSymbolsForLocale(locale)
+		symbolsForLocale = characterProcessing._getSpeechSymbolsForLocale(locale)
+	b = symbolsForLocale[0]
+	u = symbolsForLocale[1]
 	if not b and not u: return None
 	a = {
 		k.strip(): v.replacement.replace(' ', '').strip()
