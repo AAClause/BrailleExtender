@@ -268,6 +268,9 @@ def getConfspec():
 			"enabled": "boolean(default=False)",
 			"inputMethod": f"option({DOT_BY_DOT}, {BOTH_SIDES}, {ONE_SIDE}, default={ONE_SIDE})",
 		},
+		"advanced": {
+			"refreshForegroundObjNameChange": "boolean(default=False)",
+		},
 	}
 
 def loadPreferedTables():
