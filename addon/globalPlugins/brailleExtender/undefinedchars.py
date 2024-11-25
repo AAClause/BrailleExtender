@@ -6,6 +6,7 @@
 import re
 
 import addonHandler
+from . import tablehelper
 import characterProcessing
 import config
 import gui
@@ -77,8 +78,7 @@ def setUndefinedChar(t=None):
 		t = config.conf["brailleExtender"]["undefinedCharsRepr"]["method"]
 	if t == 0:
 		return
-	louis.compileString(getCurrentBrailleTables(), bytes(
-		f"undefined {HUCDotPattern}", "ASCII"))
+	louis.compileString(getCurrentBrailleTables(), f"undefined {HUCDotPattern}")
 
 
 def getExtendedSymbolsForString(s: str, lang) -> dict:
@@ -311,17 +311,12 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 			_("&Language:"), wx.Choice, choices=values
 		)
 		self.undefinedCharLang.SetSelection(undefinedCharLangID)
-		values = [_("Use the current output table")] + [
-			table.displayName for table in addoncfg.tables if table.output
-		]
-		keys = ["current"] + [
-			table.fileName for table in addoncfg.tables if table.output
-		]
+		values = [_("Use the current output table")] + tablehelper.get_display_names(tablehelper.get_tables(output=True))
+		keys = ["current"] + tablehelper.get_file_names(tablehelper.get_tables(output=True))
 		undefinedCharTable = config.conf["brailleExtender"]["undefinedCharsRepr"][
 			"table"
 		]
-		if undefinedCharTable not in addoncfg.tablesFN + ["current"]:
-			undefinedCharTable = "current"
+		if undefinedCharTable not in keys: undefinedCharTable = "current"
 		undefinedCharTableID = keys.index(undefinedCharTable)
 		self.undefinedCharTable = sHelper.addLabeledControl(
 			_("Braille &table:"), wx.Choice, choices=values
@@ -428,9 +423,7 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 			0
 		]
 		undefinedCharTable = self.undefinedCharTable.GetSelection()
-		keys = ["current"] + [
-			table.fileName for table in addoncfg.tables if table.output
-		]
+		keys = ["current"] + tablehelper.get_file_names(tablehelper.get_tables(output=True))
 		config.conf["brailleExtender"]["undefinedCharsRepr"]["table"] = keys[
 			undefinedCharTable
 		]
