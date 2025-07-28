@@ -1,7 +1,7 @@
 # coding: utf-8
 # advancedinput.py
 # Part of BrailleExtender addon for NVDA
-# Copyright 2016-2021 André-Abush CLAUSE, released under GPL.
+# Copyright 2016-2022 André-Abush CLAUSE, released under GPL.
 import codecs
 import json
 import os
@@ -177,24 +177,26 @@ def getReplacements(abreviations, strict=False):
 				entry
 				for entry in advancedInputDictHandler.getEntries()
 				if entry.abreviation.startswith(abreviation)
-				and entry.table in [currentInputTable, "*"]
+				and entry.table in [currentInputTable, '*']
 			]
 		else:
 			out += [
 				entry
 				for entry in advancedInputDictHandler.getEntries()
 				if entry.abreviation == abreviation
-				and entry.table in [currentInputTable, "*"]
+				and entry.table in [currentInputTable, '*']
 			]
 	return out
 
 
-def translateTable(tableFilename):
-	if tableFilename == "*":
-		return _("all tables")
-	for table in brailleTables.listTables():
+def translateTable(tableFilename, return_index=False):
+	if tableFilename == '*':
+		return 0 if return_index else _("Any (all tables)")
+	for i, table in enumerate(brailleTables.listTables(), 1):
+		if not table.input:
+			continue
 		if table.fileName == tableFilename:
-			return table.displayName
+			return i if return_index else table.displayName
 	return tableFilename
 
 
@@ -320,6 +322,7 @@ class AdvancedInputModeDlg(gui.settingsDialogs.SettingsDialog):
 		entryDialog = DictionaryEntryDlg(self)
 		entryDialog.abreviationTextCtrl.SetValue(entry.abreviation)
 		entryDialog.replacementTextCtrl.SetValue(entry.replacement)
+		entryDialog.table.SetSelection(translateTable(entry.table, True))
 		while entryDialog.ShowModal() == wx.ID_OK:
 			self.entry = entryDialog.dictEntry
 			if not self._isValid(editIndex):
@@ -377,16 +380,22 @@ class DictionaryEntryDlg(wx.Dialog):
 		sHelper = gui.guiHelper.BoxSizerHelper(self, orientation=wx.VERTICAL)
 		# Translators: This is a label for an edit field in add dictionary
 		# entry dialog.
-		abreviationLabelText = _("&Abreviation")
+		abreviationLabelText = _("&Abreviation:")
 		self.abreviationTextCtrl = sHelper.addLabeledControl(
 			abreviationLabelText, wx.TextCtrl
 		)
 		# Translators: This is a label for an edit field in add dictionary
 		# entry dialog.
-		replacementLabelText = _("&Replace by")
+		replacementLabelText = _("&Replace by:")
 		self.replacementTextCtrl = sHelper.addLabeledControl(
 			replacementLabelText, wx.TextCtrl
 		)
+
+		label = _("Input table:")
+		choices = [translateTable('*')]
+		choices.extend([table.displayName for table in brailleTables.listTables() if table.input])
+		self.table = sHelper.addLabeledControl(label, wx.Choice, choices=choices)
+		self.table.SetSelection(0)
 
 		sHelper.addDialogDismissButtons(
 			self.CreateButtonSizer(wx.OK | wx.CANCEL))
@@ -410,7 +419,11 @@ class DictionaryEntryDlg(wx.Dialog):
 		if msg:
 			return gui.messageBox(msg, addonName, wx.OK | wx.ICON_ERROR)
 		abreviation = getTextInBraille(abreviation)
-		newEntry = AdvancedInputDictEntry(abreviation, replacement, "*")
+		table = '*'
+		idx = self.table.GetSelection()
+		if idx > 0:
+			table = [table.fileName for table in brailleTables.listTables() if table.input][idx-1]
+		newEntry = AdvancedInputDictEntry(abreviation, replacement, table)
 		self.dictEntry = newEntry
 		evt.Skip()
 
@@ -433,6 +446,7 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 			wx.TextCtrl,
 			value=config.conf["brailleExtender"]["advancedInputMode"]
 			["escapeSignUnicodeValue"],)
+		
 
 	def onSave(self):
 		config.conf["brailleExtender"]["advancedInputMode"]["stopAfterOneChar"] = self.stopAdvancedInputModeAfterOneChar.IsChecked()
