@@ -12,7 +12,6 @@ import configobj
 import globalVars
 import inputCore
 from logHandler import log
-
 from .common import (
 	addonUpdateChannel, configDir, profilesDir,
 	MIN_AUTO_SCROLL_DELAY, DEFAULT_AUTO_SCROLL_DELAY, MAX_AUTO_SCROLL_DELAY, MIN_STEP_DELAY_CHANGE, DEFAULT_STEP_DELAY_CHANGE, MAX_STEP_DELAY_CHANGE,
