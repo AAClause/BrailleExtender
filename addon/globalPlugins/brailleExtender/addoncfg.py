@@ -270,6 +270,7 @@ def getConfspec():
 		},
 		"advanced": {
 			"fixCursorPositions": "boolean(default=True)",
+			"refreshForegroundObjNameChange": "boolean(default=False)",
 		},
 	}
 
