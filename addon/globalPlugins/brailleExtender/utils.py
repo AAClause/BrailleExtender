@@ -26,10 +26,8 @@ from keyboardHandler import KeyboardInputGesture
 addonHandler.initTranslation()
 import treeInterceptorHandler
 import unicodedata
-from .addoncfg import CHOICE_braille, CHOICE_speech, CHOICE_speechAndBraille
 from .common import INSERT_AFTER, INSERT_BEFORE, REPLACE_TEXT, baseDir
 from . import huc
-from . import tabledictionaries
 from . import volumehelper
 
 get_mute = volumehelper.get_mute
@@ -37,6 +35,7 @@ get_volume_level = volumehelper.get_volume_level
 
 
 def report_volume_level():
+	from .addoncfg import CHOICE_braille, CHOICE_speech, CHOICE_speechAndBraille
 	if get_mute() and config.conf["brailleExtender"]["volumeChangeFeedback"] in [CHOICE_braille, CHOICE_speechAndBraille]:
 		return braille.handler.message(_("Muted sound"))
 	volume_level = get_volume_level()
@@ -307,7 +306,16 @@ def getCharFromValue(s):
 	n = int(n, b)
 	return chr(n)
 
+
+def getTranslationTable():
+	translationTable = config.conf["braille"]["translationTable"]
+	if translationTable == "auto":
+		return brailleTables.getDefaultTableForCurLang(brailleTables.TableType.OUTPUT)
+	return translationTable
+
+
 def getCurrentBrailleTables(input_=False, brf=False):
+	from . import tabledictionaries
 	if brf:
 		tables = [
 			os.path.join(baseDir, "res", "brf.ctb").encode("UTF-8"),
@@ -317,8 +325,10 @@ def getCurrentBrailleTables(input_=False, brf=False):
 		tables = []
 		app = appModuleHandler.getAppModuleForNVDAObject(api.getNavigatorObject())
 		if app and app.appName != "nvda": tables += tabledictionaries.dictTables
-		if input_: mainTable = os.path.join(brailleTables.TABLES_DIR, brailleInput.handler._table.fileName)
-		else: mainTable = os.path.join(brailleTables.TABLES_DIR, config.conf["braille"]["translationTable"])
+		if input_:
+			mainTable = os.path.join(brailleTables.TABLES_DIR, brailleInput.handler._table.fileName)
+		else:
+			mainTable = os.path.join(brailleTables.TABLES_DIR, getTranslationTable())
 		tables += [
 			mainTable,
 			os.path.join(brailleTables.TABLES_DIR, "braille-patterns.cti")

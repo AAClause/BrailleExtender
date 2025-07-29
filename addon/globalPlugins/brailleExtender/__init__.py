@@ -269,7 +269,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	@staticmethod
 	def onTableDictionary(evt):
-		outTable = addoncfg.tablesTR[addoncfg.tablesFN.index(config.conf["braille"]["translationTable"])]
+		outTable = addoncfg.tablesTR[addoncfg.tablesFN.index(utils.getTranslationTable())]
 		gui.mainFrame._popupSettingsDialog(tabledictionaries.DictionaryDlg, _("Table dictionary ({})").format(outTable), "table")
 
 	@staticmethod
@@ -573,8 +573,8 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	def script_getTableOverview(self, gesture):
 		inTable = brailleInput.handler.table.displayName
-		ouTable = addoncfg.tablesTR[addoncfg.tablesFN.index(config.conf["braille"]["translationTable"])]
-		t = (_(" Input table")+": %s\n"+_("Output table")+": %s\n\n") % (inTable+' (%s)' % (brailleInput.handler.table.fileName), ouTable+' (%s)' % (config.conf["braille"]["translationTable"]))
+		ouTable = addoncfg.tablesTR[addoncfg.tablesFN.index(utils.getTranslationTable())]
+		t = (_(" Input table")+": %s\n"+_("Output table")+": %s\n\n") % (inTable+' (%s)' % (brailleInput.handler.table.fileName), ouTable+' (%s)' % (utils.getTranslationTable()))
 		t += utils.getTableOverview()
 		ui.browseableMessage("<pre>%s</pre>" % t, _("Table overview (%s)") % brailleInput.handler.table.displayName, True)
 	script_getTableOverview.__doc__ = _("Shows an overview of current input braille table in a browseable message")
@@ -755,10 +755,11 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			addoncfg.inputTables.append(config.conf["braille"]["inputTable"])
 		tid = addoncfg.inputTables.index(config.conf["braille"]["inputTable"])
 		nID = tid + 1 if tid + 1 < len(addoncfg.inputTables) else 0
-		brailleInput.handler.table = brailleTables.listTables(
-		)[addoncfg.tablesFN.index(addoncfg.inputTables[nID])]
+		try:
+			brailleInput.handler.table = brailleTables.getTable(addoncfg.inputTables[nID])
+		except ValueError:
+			brailleInput.handler.table = brailleTables.getTable(brailleTables.getDefaultTableForCurLang(brailleTables.TableType.INPUT))
 		ui.message(_("Input: %s") % brailleInput.handler.table.displayName)
-		return
 	script_switchInputBrailleTable.__doc__ = _("Switches between configured braille input tables")
 
 	def script_switchOutputBrailleTable(self, gesture):
@@ -768,19 +769,18 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			return ui.message(_("You must choose at least two tables for this feature. Please fill in the settings"))
 		if not config.conf["braille"]["translationTable"] in addoncfg.outputTables:
 			addoncfg.outputTables.append(config.conf["braille"]["translationTable"])
-		tid = addoncfg.outputTables.index(
-			config.conf["braille"]["translationTable"])
+		tid = addoncfg.outputTables.index(utils.getTranslationTable())
 		nID = tid + 1 if tid + 1 < len(addoncfg.outputTables) else 0
 		config.conf["braille"]["translationTable"] = addoncfg.outputTables[nID]
 		utils.refreshBD()
 		tabledictionaries.setDictTables()
-		ui.message(_("Output: %s") % addoncfg.tablesTR[addoncfg.tablesFN.index(config.conf["braille"]["translationTable"])])
+		ui.message(_("Output: %s") % addoncfg.tablesTR[addoncfg.tablesFN.index(utils.getTranslationTable())])
 		return
 	script_switchOutputBrailleTable.__doc__ = _("Switches between configured braille output tables")
 
 	def script_currentBrailleTable(self, gesture):
 		inTable = brailleInput.handler.table.displayName
-		ouTable = addoncfg.tablesTR[addoncfg.tablesFN.index(config.conf["braille"]["translationTable"])]
+		ouTable = addoncfg.tablesTR[addoncfg.tablesFN.index(utils.getTranslationTable())]
 		if ouTable == inTable:
 			braille.handler.message(_("I⣿O:{I}").format(I=inTable, O=ouTable))
 			speech.speakMessage(_("Input and output: {I}.").format(I=inTable, O=ouTable))
