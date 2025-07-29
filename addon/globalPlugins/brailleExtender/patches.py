@@ -682,14 +682,19 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 	end_tag_list = []
 
 	tags = []
-	if formatConfig["reportFontAttributes"]:
+	fontAttributeReporting = formatConfig.get("fontAttributeReporting")
+	if fontAttributeReporting is None:
+		fontAttributeReporting = formatConfig.get("reportFontAttributes")
+	else:
+		fontAttributeReporting = fontAttributeReporting == 1
+	if fontAttributeReporting:
 		tags += [tag for tag in [
 			"bold",
 			"italic",
 			"underline",
 			"strikethrough"] if get_method(tag) == CHOICE_tags
 		]
-	if (normalize_report_key("superscriptsAndSubscripts") and formatConfig["reportSuperscriptsAndSubscripts"]) or formatConfig["reportFontAttributes"]:
+	if normalize_report_key("superscriptsAndSubscripts") and formatConfig["reportSuperscriptsAndSubscripts"]:
 		tags += [tag for tag in [
 			"text-position:sub",
 			"text-position:super"] if get_method(tag) == CHOICE_tags

@@ -110,6 +110,8 @@ def normalize_report_key(key):
 	key_ = "report" + key[0].upper() + key[1:]
 	if key_ in config.conf["documentFormatting"]:
 		return key_
+	if key_ == "reportFontAttributes":
+		return "fontAttributeReporting"
 
 
 def get_report(key, simple=True):
