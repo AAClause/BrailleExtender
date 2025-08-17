@@ -323,7 +323,10 @@ def getCurrentBrailleTables(input_=False, brf=False):
 		]
 	else:
 		tables = []
-		app = appModuleHandler.getAppModuleForNVDAObject(api.getNavigatorObject())
+		try:
+			app = appModuleHandler.getAppModuleForNVDAObject(api.getNavigatorObject())
+		except OSError:
+			app = None
 		if app and app.appName != "nvda": tables += tabledictionaries.dictTables
 		if input_:
 			mainTable = os.path.join(brailleTables.TABLES_DIR, brailleInput.handler._table.fileName)

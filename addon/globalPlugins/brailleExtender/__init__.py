@@ -255,6 +255,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		self.submenu_item = gui.mainFrame.sysTrayIcon.menu.Insert(2, wx.ID_ANY, "%s (%s)" % (_("&Braille Extender"), addonVersion), self.submenu)
 
 	def reloadBrailleTables(self):
+		patches.louis.liblouis.lou_free()
 		self.backup__brailleTableDict = config.conf["braille"]["translationTable"]
 		tabledictionaries.setDictTables()
 		tabledictionaries.notifyInvalidTables()
