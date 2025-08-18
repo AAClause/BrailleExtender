@@ -39,8 +39,11 @@ def getBrailleCellFromRawPos(region, i):
 	return region.brailleCells[start:end+1]
 
 def getBraillePosFromRawPos(region, i):
-	start = region.rawToBraillePos[i]
-	end = start + region.brailleToRawPos.count(region.brailleToRawPos[start]) - 1
+	try:
+		start = region.rawToBraillePos[i]
+		end = start + region.brailleToRawPos.count(region.brailleToRawPos[start]) - 1
+	except IndexError:
+		start, end = 0, 0
 	return start, end
 
 def streamRegionFromRawText(region):

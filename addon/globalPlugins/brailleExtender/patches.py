@@ -1192,7 +1192,10 @@ def getTetherWithRoleTerminal(self):
 	if config.conf["brailleExtender"]["speechHistoryMode"]["enabled"]:
 		return speechhistorymode.TETHER_SPEECH
 	role = None
-	obj = api.getNavigatorObject()
+	try:
+		obj = api.getNavigatorObject()
+	except OSError:
+		obj = None
 	if obj:
 		role = api.getNavigatorObject().role
 	if (
