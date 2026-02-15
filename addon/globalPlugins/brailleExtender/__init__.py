@@ -663,23 +663,19 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				config.conf["braille"]["noMessageTimeout"] = self.backupMessageTimeout
 			_restoreMainBuffer()
 		else:
-			if config.conf["brailleExtender"]["hourDynamic"]:
-				if addoncfg.noMessageTimeout:
-					self.backupMessageTimeout = config.conf["braille"]["noMessageTimeout"]
-					config.conf["braille"]["noMessageTimeout"] = True
+			if addoncfg.noMessageTimeout:
+				self.backupMessageTimeout = config.conf["braille"]["noMessageTimeout"]
+				config.conf["braille"]["noMessageTimeout"] = True
 			self.showHourDate()
-			if config.conf["brailleExtender"]["hourDynamic"]:
-				self.hourDateTimer = wx.PyTimer(self.showHourDate)
-				time.sleep(1.02 - round(time.time() - int(time.time()), 3))
-				self.showHourDate()
-				self.hourDateTimer.Start(1000)
-			else:
-				return
+			self.hourDateTimer = wx.PyTimer(self.showHourDate)
+			time.sleep(1.02 - round(time.time() - int(time.time()), 3))
+			self.showHourDate()
+			self.hourDateTimer.Start(1000)
 		self.hourDatePlayed = not self.hourDatePlayed
 		return
 	script_hourDate.__doc__ = _(
 		"Toggles showing the current time and date on the braille display. "
-		"When continuous mode is enabled in settings, updates every second and stays visible on the main braille buffer."
+		"Updates every second and stays visible on the main braille buffer."
 	)
 
 	@staticmethod

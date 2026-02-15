@@ -113,9 +113,6 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 			itemToSelect = list(addoncfg.routingCursorsEditFields_labels.keys()).index(RC_NORMAL)
 		self.routingCursorsEditFields.SetSelection(itemToSelect)
 
-		# Translators: label of a dialog. When enabled, the time and date shown by the hour/date gesture updates every second and stays visible on the main braille buffer.
-		self.hourDynamic = sHelper.addItem(wx.CheckBox(self, label=_("&Update time and date every second (keeps it visible on the main braille buffer)")))
-		self.hourDynamic.SetValue(config.conf["brailleExtender"]["hourDynamic"])
 		self.reviewModeTerminal = sHelper.addItem(wx.CheckBox(self, label=_("Automatically Switch to review mode in &terminal windows (cmd, bash, PuTTY, PowerShell Maxima…)")))
 		self.reviewModeTerminal.SetValue(config.conf["brailleExtender"]["reviewModeTerminal"])
 
@@ -169,7 +166,6 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 		config.conf["brailleExtender"]["autoCheckUpdate"] = updateCheckChoice < size
 		config.conf["brailleExtender"]["updateChannel"] = list(addoncfg.updateChannels.keys())[updateCheckChoice % size]
 
-		config.conf["brailleExtender"]["hourDynamic"] = self.hourDynamic.IsChecked()
 		config.conf["brailleExtender"]["reviewModeTerminal"] = self.reviewModeTerminal.IsChecked()
 		if self.reverseScrollBtns.IsChecked(): instanceGP.reverseScrollBtns()
 		else: instanceGP.reverseScrollBtns(None, True)

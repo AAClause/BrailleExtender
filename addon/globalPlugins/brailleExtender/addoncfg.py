@@ -117,7 +117,6 @@ def getConfspec():
 		),
 		"brailleDisplay1": 'string(default="last")',
 		"brailleDisplay2": 'string(default="last")',
-		"hourDynamic": "boolean(default=True)",
 		"leftMarginCells_%s" % curBD: "integer(min=0, default=0, max=80)",
 		"rightMarginCells_%s" % curBD: "integer(min=0, default=0, max=80)",
 		"reverseScrollBtns": "boolean(default=False)",
