@@ -26,7 +26,7 @@ from keyboardHandler import KeyboardInputGesture
 addonHandler.initTranslation()
 import treeInterceptorHandler
 import unicodedata
-from .common import INSERT_AFTER, INSERT_BEFORE, REPLACE_TEXT, baseDir
+from .common import INSERT_AFTER, INSERT_BEFORE, REPLACE_TEXT, baseDir, NVDA_HAS_AUTOMATIC_BRAILLE_TABLES
 from . import huc
 from . import volumehelper
 
@@ -284,7 +284,8 @@ def refreshBD():
 	else:
 		braille.handler.handleGainFocus(api.getFocusObject())
 
-def getSpeechSymbols(text = None):
+def getSpeechSymbols(text: str | None = None) -> str:
+	"""Return speech symbol description for text (or selection). Shows message if no text."""
 	if not text: text = getTextSelection()
 	if not text: return ui.message(_("No text selected"))
 	locale = languageHandler.getLanguage()
@@ -307,11 +308,50 @@ def getCharFromValue(s):
 	return chr(n)
 
 
+def supportsAutomaticBrailleTables():
+	"""Returns True if NVDA supports automatic braille table selection (NVDA 2025.1+)."""
+	return NVDA_HAS_AUTOMATIC_BRAILLE_TABLES
+
+
+def getAutomaticTableDisplayName(tableType):
+	"""Get the display string for automatic table, e.g. 'Automatic (en-us-comp8.utb)'."""
+	# Translators: An option to select a braille table automatically, according to the current language.
+	return _("Automatic ({name})").format(
+		name=brailleTables.getTable(
+			brailleTables.getDefaultTableForCurLang(tableType)
+		).displayName
+	)
+
+
 def getTranslationTable():
 	translationTable = config.conf["braille"]["translationTable"]
 	if translationTable == "auto":
 		return brailleTables.getDefaultTableForCurLang(brailleTables.TableType.OUTPUT)
 	return translationTable
+
+
+def getActiveOutputTableForSwitch():
+	"""Returns the effective output table identifier for switching: 'auto' or table fileName."""
+	tt = config.conf["braille"]["translationTable"]
+	if tt == "auto":
+		return "auto"
+	if supportsAutomaticBrailleTables():
+		defaultTable = brailleTables.getDefaultTableForCurLang(brailleTables.TableType.OUTPUT)
+		if braille.handler.table.fileName == defaultTable:
+			return "auto"
+	return tt
+
+
+def getActiveInputTableForSwitch():
+	"""Returns the effective input table identifier for switching: 'auto' or table fileName."""
+	it = config.conf["braille"]["inputTable"]
+	if it == "auto":
+		return "auto"
+	if supportsAutomaticBrailleTables():
+		defaultTable = brailleTables.getDefaultTableForCurLang(brailleTables.TableType.INPUT)
+		if brailleInput.handler.table.fileName == defaultTable:
+			return "auto"
+	return brailleInput.handler.table.fileName
 
 
 def getCurrentBrailleTables(input_=False, brf=False):

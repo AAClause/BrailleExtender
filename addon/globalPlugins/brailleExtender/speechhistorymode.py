@@ -7,7 +7,6 @@ import config
 import speech
 import api
 import ui
-import versionInfo
 import gui
 import wx
 import addonHandler
@@ -52,10 +51,7 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		config.conf["brailleExtender"]["speechHistoryMode"]["speakEntries"] = self.speakEntries.IsChecked()
 
 
-if versionInfo.version_year < 2021:
-	orig_speak= speech.speak
-else:
-	orig_speak = speech.speech.speak
+orig_speak = speech.speech.speak
 
 
 def showSpeech(index, allowReadEntry=False):
@@ -100,12 +96,9 @@ def speak(
 	index = len(speechList) - 1
 	showSpeech(index, allowReadEntry=allowReadEntry)
 
-if versionInfo.version_year < 2021:
+speech.speech.speak = speak
+if hasattr(speech, "speak"):
 	speech.speak = speak
-else:
-	speech.speech.speak = speak
-	if hasattr(speech, "speak"):
-		speech.speak = speak
 
 
 def scrollBack(self):

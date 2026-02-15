@@ -50,9 +50,9 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		self.label.Bind(wx.EVT_TEXT, self.onLabel)
 
 		bHelper = gui.guiHelper.ButtonHelper(orientation=wx.HORIZONTAL)
-		self.resetLabelBtn = bHelper.addButton(self, wx.NewId(), _("&Reset this role label"), wx.DefaultPosition)
+		self.resetLabelBtn = bHelper.addButton(self, wx.ID_ANY, _("&Reset this role label"), wx.DefaultPosition)
 		self.resetLabelBtn.Bind(wx.EVT_BUTTON, self.onResetLabelBtn)
-		self.resetAllLabelsBtn = bHelper.addButton(self, wx.NewId(), _("Reset a&ll role labels"), wx.DefaultPosition)
+		self.resetAllLabelsBtn = bHelper.addButton(self, wx.ID_ANY, _("Reset a&ll role labels"), wx.DefaultPosition)
 		self.resetAllLabelsBtn.Bind(wx.EVT_BUTTON, self.onResetAllLabelsBtn)
 		sHelper.addItem(bHelper)
 		self.onToggleRoleLabels(None)

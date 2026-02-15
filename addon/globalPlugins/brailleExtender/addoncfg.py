@@ -7,6 +7,7 @@ import os
 
 import addonHandler
 import braille
+import brailleInput
 import config
 import configobj
 import globalVars
@@ -258,7 +259,6 @@ def getConfspec():
 			}
 		},
 		"quickLaunches": {},
-		"brailleTables": {},
 		"advancedInputMode": {
 			"stopAfterOneChar": "boolean(default=True)",
 			"escapeSignUnicodeValue": "string(default=⠼)",
@@ -274,9 +274,13 @@ def getConfspec():
 	}
 
 def loadPreferedTables():
+	from . import utils
 	global inputTables, outputTables
 	listInputTables = [table[0] for table in brailleTables.listTables() if table.input]
 	listOutputTables = [table[0] for table in brailleTables.listTables() if table.output]
+	if utils.supportsAutomaticBrailleTables():
+		listInputTables = ["auto"] + listInputTables
+		listOutputTables = ["auto"] + listOutputTables
 	inputTables = config.conf["brailleExtender"]["inputTables"]
 	outputTables = config.conf["brailleExtender"]["outputTables"]
 	if not isinstance(inputTables, list):
@@ -285,11 +289,24 @@ def loadPreferedTables():
 		outputTables = outputTables.replace(', ', ',').split(',')
 	inputTables = [t for t in inputTables if t in listInputTables]
 	outputTables = [t for t in outputTables if t in listOutputTables]
+	if utils.supportsAutomaticBrailleTables():
+		if "auto" not in inputTables:
+			inputTables.insert(0, "auto")
+		if "auto" not in outputTables:
+			outputTables.insert(0, "auto")
+	activeInput = utils.getActiveInputTableForSwitch()
+	activeOutput = utils.getActiveOutputTableForSwitch()
+	if activeInput not in inputTables and activeInput in listInputTables:
+		inputTables.append(activeInput)
+	if activeOutput not in outputTables and activeOutput in listOutputTables:
+		outputTables.append(activeOutput)
 
 
 def loadConf():
 	global curBD, gesturesFileExists, profileFileExists, iniProfile
 	curBD = braille.handler.display.name
+	if "brailleTables" in config.conf["brailleExtender"]:
+		del config.conf["brailleExtender"]["brailleTables"]
 	try: brlextConf = config.conf["brailleExtender"].copy()
 	except configobj.validate.VdtValueError:
 		config.conf["brailleExtender"]["updateChannel"] = "dev"
@@ -328,7 +345,14 @@ def loadConf():
 
 def loadGestures():
 	if gesturesFileExists:
-		if os.path.exists(os.path.join(profilesDir, "_BrowseMode", config.conf["braille"]["inputTable"] + ".ini")): GLng = config.conf["braille"]["inputTable"]
+		inputTable = config.conf["braille"]["inputTable"]
+		if inputTable == "auto" and not noUnicodeTable:
+			from . import utils
+			if utils.supportsAutomaticBrailleTables():
+				inputTable = brailleTables.getDefaultTableForCurLang(brailleTables.TableType.INPUT)
+			else:
+				inputTable = "en-us-comp8.utb"
+		if os.path.exists(os.path.join(profilesDir, "_BrowseMode", inputTable + ".ini")): GLng = inputTable
 		else: GLng = 'en-us-comp8.utb'
 		gesturesBMPath = os.path.join(profilesDir, "_BrowseMode", "common.ini")
 		gesturesLangBMPath = os.path.join(profilesDir, "_BrowseMode/", GLng + ".ini")
@@ -387,9 +411,6 @@ def getKeyboardLayout():
 	and config.conf["brailleExtender"]["keyboardLayout_%s" % curBD] in iniProfile['keyboardLayouts'].keys()):
 		return iniProfile['keyboardLayouts'].keys().index(config.conf["brailleExtender"]["keyboardLayout_%s" % curBD])
 	return 0
-
-def getCustomBrailleTables():
-	return [config.conf["brailleExtender"]["brailleTables"][k].split('|', 3) for k in config.conf["brailleExtender"]["brailleTables"]]
 
 def getTabSize():
 	size = config.conf["brailleExtender"]["tabSize_%s" % curBD]

@@ -13,7 +13,9 @@ import gui
 import wx
 
 addonHandler.initTranslation()
+
 import braille
+popupSettingsDialog = getattr(gui.mainFrame, 'popupSettingsDialog', gui.mainFrame._popupSettingsDialog)
 import config
 import louis
 
@@ -344,7 +346,7 @@ class DictionaryEntryDlg(wx.Dialog):
 		label = [_("Global dictionary"), _("Table dictionary ({})").format(outTable), _("Temporary dictionary")][self.dictRadioBox.GetSelection()]
 		type_ = self.getType_()
 		self.Destroy()
-		gui.mainFrame._popupSettingsDialog(DictionaryDlg, label, type_)
+		popupSettingsDialog(DictionaryDlg, label, type_)
 
 	def getOpcode(self):
 		opcodeRadioValue = self.opcodeRadioBox.GetSelection()

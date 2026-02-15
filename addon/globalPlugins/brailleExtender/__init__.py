@@ -33,11 +33,11 @@ from logHandler import log
 
 from . import addoncfg
 config.conf.spec["brailleExtender"] = addoncfg.getConfspec()
+from . import patches
 from . import advancedinput
 from . import huc
 from . import documentformatting
 from . import objectpresentation
-from . import patches
 from . import rolelabels
 from . import settings
 from . import tabledictionaries
@@ -45,11 +45,34 @@ from . import undefinedchars
 from . import updatecheck
 from . import utils
 from .common import (addonName, addonURL, addonVersion, punctuationSeparator,
-	RC_NORMAL, RC_EMULATE_ARROWS_BEEP, RC_EMULATE_ARROWS_SILENT)
+	RC_NORMAL, RC_EMULATE_ARROWS_BEEP, RC_EMULATE_ARROWS_SILENT,
+	NVDA_HAS_SPEAK_ON_NAVIGATING_BY_UNIT)
 
 addonHandler.initTranslation()
 
 instanceGP = None
+
+
+def _brailleMessagePersistent(msg):
+	"""Display a message in the main braille buffer so it stays visible (no timeout)."""
+	region = braille.TextRegion(msg)
+	region.obj = None
+	region.update()
+	braille.handler.mainBuffer.clear()
+	braille.handler.mainBuffer.regions.append(region)
+	braille.handler.mainBuffer.update()
+	braille.handler.update()
+
+
+def _restoreMainBuffer():
+	"""Clear the persistent time display and restore the main braille buffer with focus/review content."""
+	braille.handler.buffer = braille.handler.mainBuffer
+	braille.handler.mainBuffer.clear()
+	braille.handler.initialDisplay()
+
+
+def _popupSettingsDialog(*args, **kwargs):
+	return getattr(gui.mainFrame, 'popupSettingsDialog', gui.mainFrame._popupSettingsDialog)(*args, **kwargs)
 
 rotorItems = [
 	("default", _("Default")),
@@ -116,6 +139,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		startTime = time.time()
 		super(globalPluginHandler.GlobalPlugin, self).__init__()
 		patches.instanceGP = self
+		patches.apply_patches()
 		self.reloadBrailleTables()
 		settings.instanceGP = self
 		addoncfg.loadConf()
@@ -130,9 +154,6 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		if not globalVars.appArgs.secure and config.conf["brailleExtender"]["autoCheckUpdate"] and (checkingForced or (time.time() - config.conf["brailleExtender"]["lastCheckUpdate"]) > delayChecking):
 			updatecheck.checkUpdates(True)
 			config.conf["brailleExtender"]["lastCheckUpdate"] = time.time()
-		self.backup__addTextWithFields = braille.TextInfoRegion._addTextWithFields
-		self.backup__update = braille.TextInfoRegion.update
-		self.backup__getTypeformFromFormatField = braille.TextInfoRegion._getTypeformFromFormatField
 		self.backup__brailleTableDict = config.conf["braille"]["translationTable"]
 		braille.TextInfoRegion._addTextWithFields = documentformatting.decorator(braille.TextInfoRegion._addTextWithFields, "addTextWithFields")
 		braille.TextInfoRegion.update = documentformatting.decorator(braille.TextInfoRegion.update, "update")
@@ -170,7 +191,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		nextHandler()
 
 	def event_foreground(self, obj, nextHandler):
-		if braille.handler._auto_scroll:
+		if patches.is_patch_applied("braille_handler") and patches.get_auto_scroll():
 			braille.handler.toggle_auto_scroll()
 		nextHandler()
 
@@ -218,7 +239,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		item = self.submenu.Append(wx.ID_ANY, _("&Settings..."), _("Opens the addons' settings."))
 		gui.mainFrame.sysTrayIcon.Bind(
 			wx.EVT_MENU,
-			lambda event: wx.CallAfter(gui.mainFrame._popupSettingsDialog, settings.AddonSettingsDialog),
+			lambda event: wx.CallAfter(_popupSettingsDialog, settings.AddonSettingsDialog),
 			item
 		)
 		dictionariesMenu = wx.Menu()
@@ -233,13 +254,13 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		item = self.submenu.Append(wx.ID_ANY, _("Advanced &input mode dictionary..."), _("Advanced input mode configuration"))
 		gui.mainFrame.sysTrayIcon.Bind(
 			wx.EVT_MENU,
-			lambda event: gui.mainFrame._popupSettingsDialog(advancedinput.AdvancedInputModeDlg),
+			lambda event: _popupSettingsDialog(advancedinput.AdvancedInputModeDlg),
 			item
 		)
 		item = self.submenu.Append(wx.ID_ANY, "%s..." % _("&Quick launches"), _("Quick launches configuration"))
 		gui.mainFrame.sysTrayIcon.Bind(
 			wx.EVT_MENU,
-			lambda event: wx.CallAfter(gui.mainFrame._popupSettingsDialog, settings.QuickLaunchesDlg),
+			lambda event: wx.CallAfter(_popupSettingsDialog, settings.QuickLaunchesDlg),
 			item
 		)
 		item = self.submenu.Append(wx.ID_ANY, _("Braille input table &overview"), _("Overview of the current input braille table"))
@@ -266,16 +287,16 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	@staticmethod
 	def onDefaultDictionary(evt):
-		gui.mainFrame._popupSettingsDialog(tabledictionaries.DictionaryDlg, _("Global dictionary"), "default")
+		_popupSettingsDialog(tabledictionaries.DictionaryDlg, _("Global dictionary"), "default")
 
 	@staticmethod
 	def onTableDictionary(evt):
 		outTable = addoncfg.tablesTR[addoncfg.tablesFN.index(utils.getTranslationTable())]
-		gui.mainFrame._popupSettingsDialog(tabledictionaries.DictionaryDlg, _("Table dictionary ({})").format(outTable), "table")
+		_popupSettingsDialog(tabledictionaries.DictionaryDlg, _("Table dictionary ({})").format(outTable), "table")
 
 	@staticmethod
 	def onTemporaryDictionary(evt):
-		gui.mainFrame._popupSettingsDialog(tabledictionaries.DictionaryDlg, _("Temporary dictionary"), "tmp")
+		_popupSettingsDialog(tabledictionaries.DictionaryDlg, _("Temporary dictionary"), "tmp")
 
 	def getGestureWithBrailleIdentifier(self, gesture = ''):
 		return ("br(%s):" % addoncfg.curBD if ':' not in gesture else '') + gesture
@@ -542,6 +563,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	script_toggle_plain_text.__doc__ = _("Toggle plain text mode")
 
 	def script_toggleSpeechScrollFocusMode(self, gesture):
+		if NVDA_HAS_SPEAK_ON_NAVIGATING_BY_UNIT:
+			ui.message(_("Use NVDA Braille settings: \"Speak when navigating by line or paragraph\" (since 2025.1)"))
+			return
 		choices = addoncfg.focusOrReviewChoices
 		curChoice = config.conf["brailleExtender"]["speakScroll"]
 		curChoiceID = list(choices.keys()).index(curChoice)
@@ -630,13 +654,14 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	script_position.__doc__ = _("Reports the cursor position of text under the braille cursor")
 
 	def script_hourDate(self, gesture=None):
-		if braille.handler._auto_scroll:
+		if patches.get_auto_scroll():
 			return
 		if self.hourDatePlayed:
 			self.hourDateTimer.Stop()
 			self.clearMessageFlash()
 			if addoncfg.noMessageTimeout:
 				config.conf["braille"]["noMessageTimeout"] = self.backupMessageTimeout
+			_restoreMainBuffer()
 		else:
 			if config.conf["brailleExtender"]["hourDynamic"]:
 				if addoncfg.noMessageTimeout:
@@ -652,15 +677,21 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				return
 		self.hourDatePlayed = not self.hourDatePlayed
 		return
-	script_hourDate.__doc__ = _("Shows hour and date changes automatically on a braille display")
+	script_hourDate.__doc__ = _(
+		"Toggles showing the current time and date on the braille display. "
+		"When continuous mode is enabled in settings, updates every second and stays visible on the main braille buffer."
+	)
 
 	@staticmethod
 	def showHourDate():
 		currentHourDate = time.strftime('%X %x (%a, %W/53, %b)', time.localtime())
-		return braille.handler.message(currentHourDate)
+		return _brailleMessagePersistent(currentHourDate)
 
 	def script_autoScroll(self, gesture):
-		braille.handler.toggle_auto_scroll()
+		if patches.is_patch_applied("braille_handler"):
+			braille.handler.toggle_auto_scroll()
+		else:
+			ui.message(_("Autoscroll feature unavailable (patch not applied)"))
 	script_autoScroll.__doc__ = _("Toggle automatic braille scroll")
 
 	def script_volumePlus(self, gesture):
@@ -736,52 +767,98 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	script_checkUpdate.__doc__ = _("Checks for Braille Extender updates")
 
 	def script_increaseDelayAutoScroll(self, gesture):
+		if not patches.is_patch_applied("braille_handler"):
+			ui.message(_("Autoscroll feature unavailable (patch not applied)"))
+			return
 		braille.handler.increase_auto_scroll_delay()
-		if not braille.handler._auto_scroll:
+		if not patches.get_auto_scroll():
 			braille.handler.report_auto_scroll_delay()
 	script_increaseDelayAutoScroll.__doc__ = _("Increase braille autoscroll delay")
 
 	def script_decreaseDelayAutoScroll(self, gesture):
+		if not patches.is_patch_applied("braille_handler"):
+			ui.message(_("Autoscroll feature unavailable (patch not applied)"))
+			return
 		braille.handler.decrease_auto_scroll_delay()
-		if not braille.handler._auto_scroll:
+		if not patches.get_auto_scroll():
 			braille.handler.report_auto_scroll_delay()
 	script_decreaseDelayAutoScroll.__doc__ = _("Decrease braille autoscroll delay")
 
 	def script_switchInputBrailleTable(self, gesture):
 		if addoncfg.noUnicodeTable:
 			return ui.message(_("NVDA 2017.3 or later is required to use this feature"))
+		addoncfg.loadPreferedTables()
 		if len(addoncfg.inputTables) < 2:
 			return ui.message(_("You must choose at least two tables for this feature. Please fill in the settings"))
-		if not config.conf["braille"]["inputTable"] in addoncfg.inputTables:
-			addoncfg.inputTables.append(config.conf["braille"]["inputTable"])
-		tid = addoncfg.inputTables.index(config.conf["braille"]["inputTable"])
-		nID = tid + 1 if tid + 1 < len(addoncfg.inputTables) else 0
+		activeInput = utils.getActiveInputTableForSwitch()
 		try:
-			brailleInput.handler.table = brailleTables.getTable(addoncfg.inputTables[nID])
+			tid = addoncfg.inputTables.index(activeInput)
 		except ValueError:
-			brailleInput.handler.table = brailleTables.getTable(brailleTables.getDefaultTableForCurLang(brailleTables.TableType.INPUT))
-		ui.message(_("Input: %s") % brailleInput.handler.table.displayName)
+			tid = -1
+		nID = (tid + 1) % len(addoncfg.inputTables)
+		nextTable = addoncfg.inputTables[nID]
+		if nextTable == "auto":
+			config.conf["braille"]["inputTable"] = "auto"
+			# Bypass handler's table setter to avoid it overwriting config with table.fileName
+			brailleInput.handler._table = brailleTables.getTable(
+				brailleTables.getDefaultTableForCurLang(brailleTables.TableType.INPUT)
+			)
+			msg = utils.getAutomaticTableDisplayName(brailleTables.TableType.INPUT)
+		else:
+			try:
+				brailleInput.handler.table = brailleTables.getTable(nextTable)
+				config.conf["braille"]["inputTable"] = nextTable
+				msg = brailleInput.handler.table.displayName
+			except (ValueError, LookupError):
+				brailleInput.handler.table = brailleTables.getTable(
+					brailleTables.getDefaultTableForCurLang(brailleTables.TableType.INPUT)
+				)
+				msg = brailleInput.handler.table.displayName
+		ui.message(_("Input: %s") % msg)
 	script_switchInputBrailleTable.__doc__ = _("Switches between configured braille input tables")
 
 	def script_switchOutputBrailleTable(self, gesture):
 		if addoncfg.noUnicodeTable:
 			return ui.message(_("NVDA 2017.3 or later is required to use this feature"))
+		addoncfg.loadPreferedTables()
 		if len(addoncfg.outputTables) < 2:
 			return ui.message(_("You must choose at least two tables for this feature. Please fill in the settings"))
-		if not config.conf["braille"]["translationTable"] in addoncfg.outputTables:
-			addoncfg.outputTables.append(config.conf["braille"]["translationTable"])
-		tid = addoncfg.outputTables.index(utils.getTranslationTable())
-		nID = tid + 1 if tid + 1 < len(addoncfg.outputTables) else 0
-		config.conf["braille"]["translationTable"] = addoncfg.outputTables[nID]
+		activeOutput = utils.getActiveOutputTableForSwitch()
+		try:
+			tid = addoncfg.outputTables.index(activeOutput)
+		except ValueError:
+			tid = -1
+		nID = (tid + 1) % len(addoncfg.outputTables)
+		nextTable = addoncfg.outputTables[nID]
+		if nextTable == "auto":
+			config.conf["braille"]["translationTable"] = "auto"
+			# Bypass handler's table setter to avoid it overwriting config with table.fileName
+			braille.handler._table = brailleTables.getTable(
+				brailleTables.getDefaultTableForCurLang(brailleTables.TableType.OUTPUT)
+			)
+		else:
+			config.conf["braille"]["translationTable"] = nextTable
+			try:
+				braille.handler.table = brailleTables.getTable(nextTable)
+			except (ValueError, LookupError):
+				braille.handler._table = brailleTables.getTable(
+					brailleTables.getDefaultTableForCurLang(brailleTables.TableType.OUTPUT)
+				)
 		utils.refreshBD()
 		tabledictionaries.setDictTables()
-		ui.message(_("Output: %s") % addoncfg.tablesTR[addoncfg.tablesFN.index(utils.getTranslationTable())])
-		return
+		msg = utils.getAutomaticTableDisplayName(brailleTables.TableType.OUTPUT) if nextTable == "auto" else addoncfg.tablesTR[addoncfg.tablesFN.index(utils.getTranslationTable())]
+		ui.message(_("Output: %s") % msg)
 	script_switchOutputBrailleTable.__doc__ = _("Switches between configured braille output tables")
 
 	def script_currentBrailleTable(self, gesture):
-		inTable = brailleInput.handler.table.displayName
-		ouTable = addoncfg.tablesTR[addoncfg.tablesFN.index(utils.getTranslationTable())]
+		if config.conf["braille"]["inputTable"] == "auto":
+			inTable = utils.getAutomaticTableDisplayName(brailleTables.TableType.INPUT)
+		else:
+			inTable = brailleInput.handler.table.displayName
+		if config.conf["braille"]["translationTable"] == "auto":
+			ouTable = utils.getAutomaticTableDisplayName(brailleTables.TableType.OUTPUT)
+		else:
+			ouTable = addoncfg.tablesTR[addoncfg.tablesFN.index(utils.getTranslationTable())]
 		if ouTable == inTable:
 			braille.handler.message(_("I⣿O:{I}").format(I=inTable, O=ouTable))
 			speech.speakMessage(_("Input and output: {I}.").format(I=inTable, O=ouTable))
@@ -1165,7 +1242,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	def script_addDictionaryEntry(self, gesture):
 		curChar = utils.getCurrentChar()
-		gui.mainFrame._popupSettingsDialog(tabledictionaries.DictionaryEntryDlg, title=_("Add dictionary entry or see a dictionary"), textPattern=curChar, specifyDict=True)
+		_popupSettingsDialog(tabledictionaries.DictionaryEntryDlg, title=_("Add dictionary entry or see a dictionary"), textPattern=curChar, specifyDict=True)
 	script_addDictionaryEntry.__doc__ = _("Adds an entry in braille dictionary")
 
 	def script_toggle_blank_line_scroll(self, gesture):
@@ -1222,9 +1299,6 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	__gestures["kb:nvda+alt+y"] = "addDictionaryEntry"
 
 	def terminate(self):
-		braille.TextInfoRegion._addTextWithFields = self.backup__addTextWithFields
-		braille.TextInfoRegion.update = self.backup__update
-		braille.TextInfoRegion._getTypeformFromFormatField = self.backup__getTypeformFromFormatField
 		self.removeMenu()
 		rolelabels.discardRoleLabels()
 		if addoncfg.noUnicodeTable:
@@ -1233,11 +1307,16 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			self.hourDateTimer.Stop()
 			if addoncfg.noMessageTimeout:
 				config.conf["braille"]["noMessageTimeout"] = self.backupMessageTimeout
-		if braille.handler._auto_scroll:
-			braille.handler.toggle_auto_scroll()
+			_restoreMainBuffer()
+		if patches.is_patch_applied("braille_handler") and patches.get_auto_scroll():
+			try:
+				braille.handler.toggle_auto_scroll()
+			except AttributeError:
+				pass
 		if self.autoTestPlayed: self.autoTestTimer.Stop()
 		tabledictionaries.removeTmpDict()
 		advancedinput.terminate()
+		patches.unload_patches()
 		super().terminate()
 
 	def removeMenu(self):

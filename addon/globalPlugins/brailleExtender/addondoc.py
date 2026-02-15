@@ -3,7 +3,10 @@
 # Part of BrailleExtender addon for NVDA
 # Copyright 2016-2021 André-Abush CLAUSE, released under GPL.
 
+from __future__ import annotations
+
 import re
+from typing import Any, Optional
 
 import addonHandler
 
@@ -20,19 +23,21 @@ from .undefinedchars import CHOICES_LABELS
 from . import utils
 from .common import addonDesc, addonGitHubURL, addonName, addonSummary, addonURL, addonVersion, punctuationSeparator
 
-def escape(text):
+def escape(text: str) -> str:
+	"""Escape HTML special characters in text."""
 	chars = {"&": "&amp;", '"': "&quot;", "'": "&apos;", "<": "&lt;", ">": "&gt;"}
 	return "".join(chars.get(c, c) for c in text)
 
 
-def initializeRandomChar():
+def initializeRandomChar() -> None:
 	global chosenChar
 	chosenChar = random.choice("#$£€=+()*,;:.?!/\"&")
 
 URLHUC = "https://danielmayr.at/huc/"
 chosenChar = None
 
-def getFeaturesDoc():
+def getFeaturesDoc() -> str:
+	"""Return HTML documentation for BrailleExtender features."""
 	undefinedCharsSamples = [
 		[_("Character"), "HUC8", _("Hexadecimal"), _("Decimal"), _("Octal"), _("Binary")],
 		['👍', "⣭⢤⡙", "⠭1f44d or ⠓1f44d", "⠙128077", "⠕372115", "⠃11111010001001101"],
@@ -41,7 +46,7 @@ def getFeaturesDoc():
 		['🌊', "⣭⠤⠺", "⠭1f30a or ⠓1f30a", "⠙127754", "⠕371412", "⠃11111001100001010"]
 	]
 	for i in range(1, len(undefinedCharsSamples)):
-		ch = undefinedCharsSamples[i][0][0]
+		ch = undefinedCharsSamples[i][0]
 		undefinedCharsSamples[i][0] = "%s (%s)" % (ch, utils.getSpeechSymbols(ch))
 
 	braillePattern = config.conf["brailleExtender"]["advancedInputMode"]["escapeSignUnicodeValue"]
@@ -161,7 +166,7 @@ def getFeaturesDoc():
 class AddonDoc:
 	instanceGP = None
 
-	def __init__(self, instanceGP):
+	def __init__(self, instanceGP: Optional[Any]) -> None:
 		initializeRandomChar()
 		if not instanceGP:
 			return
@@ -250,7 +255,6 @@ class AddonDoc:
 			doc = re.sub(r"[  ]?;(</li>)$", r".\1", doc)
 			doc += "</ul>"
 
-			# list keyboard layouts
 			if (
 				not instanceGP.noKeyboarLayout()
 				and "keyboardLayouts" in addoncfg.iniProfile
@@ -362,7 +366,7 @@ class AddonDoc:
 		ui.browseableMessage(doc, _("%s's documentation") % addonName, True)
 
 	@staticmethod
-	def getDescFormated(txt):
+	def getDescFormated(txt: str) -> str:
 		txt = re.sub(r"\n\* ([^\n]+)(\n|$)", r"\n<li>\1</li>\2", txt)
 		txt = re.sub(r"\n\* ([^\n]+)(\n|$)", r"\n<li>\1</li>\2", txt)
 		txt = re.sub(r"([^>])\n<li>", r"\1\n<ul><li>", txt)
@@ -370,7 +374,8 @@ class AddonDoc:
 		txt = re.sub(r"</li>$", r"</li></ul>", txt)
 		return txt
 
-	def getDocScript(self, n):
+	def getDocScript(self, n: str) -> str:
+		"""Return localized description for a script/gesture name."""
 		if n == "defaultQuickLaunches":
 			n = "quickLaunch"
 		doc = None
@@ -392,7 +397,7 @@ class AddonDoc:
 			else _("description currently unavailable for this shortcut")
 		)
 
-	def translateLst(self, lst):
+	def translateLst(self, lst: dict[str, Any]) -> str:
 		doc = "<ul>"
 		for g in lst:
 			if "kb:" in g and "capsLock" not in g and "insert" not in g:

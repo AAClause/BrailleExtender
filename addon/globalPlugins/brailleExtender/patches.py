@@ -1,10 +1,8 @@
 # coding: utf-8
-# patches.py
-# Part of BrailleExtender addon for NVDA
+# patches.py - Part of BrailleExtender addon for NVDA
 # Copyright 2016-2022 André-Abush CLAUSE, released under GPL.
-# This file modify some functions from core.
-# coding: utf-8
 
+import ctypes
 import os
 import re
 import struct
@@ -39,6 +37,14 @@ import watchdog
 import winUser
 from logHandler import log
 
+try:
+	import winBindings
+	_user32 = winBindings.user32
+	_useWinBindings = True
+except ImportError:
+	_user32 = winUser
+	_useWinBindings = False
+
 from . import addoncfg
 from . import advancedinput
 from . import autoscroll
@@ -46,7 +52,10 @@ from . import huc
 from . import regionhelper
 from . import speechhistorymode
 from . import undefinedchars
-from .common import baseDir, CHOICE_tags, IS_CURRENT_NO, RC_EMULATE_ARROWS_BEEP, RC_EMULATE_ARROWS_SILENT
+from .common import (
+	baseDir, CHOICE_tags, IS_CURRENT_NO, RC_EMULATE_ARROWS_BEEP, RC_EMULATE_ARROWS_SILENT,
+	NVDA_HAS_INTERRUPT_SPEECH_WHILE_SCROLLING, NVDA_HAS_SPEAK_ON_ROUTING, NVDA_HAS_SPEAK_ON_NAVIGATING_BY_UNIT,
+)
 from .documentformatting import get_method, get_tags, N_, normalizeTextAlign, normalize_report_key
 from .objectpresentation import getPropertiesBraille, selectedElementEnabled, update_NVDAObjectRegion
 from .onehand import process as processOneHandMode
@@ -62,17 +71,50 @@ landmarkLabels = braille.landmarkLabels
 def SELECTION_SHAPE(): return braille.SELECTION_SHAPE
 
 
+def _saveOriginals():
+	o = {}
+	o["getControlFieldBraille"] = braille.getControlFieldBraille
+	o["getFormatFieldBraille"] = braille.getFormatFieldBraille
+	o["Region.update"] = braille.Region.update
+	o["TextInfoRegion._addTextWithFields"] = braille.TextInfoRegion._addTextWithFields
+	o["TextInfoRegion.update"] = braille.TextInfoRegion.update
+	o["TextInfoRegion.previousLine"] = braille.TextInfoRegion.previousLine
+	o["TextInfoRegion.nextLine"] = braille.TextInfoRegion.nextLine
+	o["TextInfoRegion._getTypeformFromFormatField"] = getattr(
+		braille.TextInfoRegion, "_getTypeformFromFormatField", None
+	)
+	o["BrailleInputHandler._translate"] = brailleInput.BrailleInputHandler._translate
+	o["BrailleInputHandler.emulateKey"] = brailleInput.BrailleInputHandler.emulateKey
+	o["BrailleInputHandler.input"] = brailleInput.BrailleInputHandler.input
+	o["BrailleInputHandler.sendChars"] = brailleInput.BrailleInputHandler.sendChars
+	o["script_braille_routeTo"] = globalCommands.GlobalCommands.script_braille_routeTo
+	o["NVDAObjectRegion.update"] = braille.NVDAObjectRegion.update
+	o["getPropertiesBraille"] = braille.getPropertiesBraille
+	o["BrailleHandler.getTether"] = braille.BrailleHandler.getTether
+	o["BrailleHandler._displayWithCursor"] = getattr(
+		braille.BrailleHandler, "_displayWithCursor", None
+	)
+	if hasattr(louis, "_createTablesString"):
+		o["_createTablesString"] = louis._createTablesString
+	return o
+
+_originals = _saveOriginals()
+
 origFunc = {
-	"script_braille_routeTo": globalCommands.GlobalCommands.script_braille_routeTo,
-	"update": braille.Region.update,
-	"_createTablesString": louis._createTablesString,
-	"update_TextInfoRegion": braille.TextInfoRegion.update,
+	"script_braille_routeTo": _originals["script_braille_routeTo"],
+	"update": _originals["Region.update"],
+	"update_TextInfoRegion": _originals["TextInfoRegion.update"],
 }
+if "_createTablesString" in _originals:
+	origFunc["_createTablesString"] = _originals["_createTablesString"]
 
 
 def sayCurrentLine():
 	global instanceGP
-	if not braille.handler._auto_scroll:
+	# Skip when NVDA core provides this (since 2025.1 via speakOnNavigatingByUnit)
+	if NVDA_HAS_SPEAK_ON_NAVIGATING_BY_UNIT:
+		return
+	if not get_auto_scroll():
 		if getTether() == braille.handler.TETHER_REVIEW:
 			if config.conf["brailleExtender"]["speakScroll"] in [addoncfg.CHOICE_focusAndReview, addoncfg.CHOICE_review]:
 				scriptHandler.executeScript(
@@ -90,9 +132,11 @@ def sayCurrentLine():
 			info.expand(textInfos.UNIT_LINE)
 			speech.speakTextInfo(info, unit=textInfos.UNIT_LINE, reason=REASON_CARET)
 
-# globalCommands.GlobalCommands.script_braille_routeTo()
 def say_character_under_braille_routing_cursor(gesture):
-	if not braille.handler._auto_scroll and scriptHandler.getLastScriptRepeatCount() == 0 and config.conf["brailleExtender"]["speakRoutingTo"]:
+	# Skip when NVDA core provides this (since 2024.4)
+	if NVDA_HAS_SPEAK_ON_ROUTING:
+		return
+	if not get_auto_scroll() and scriptHandler.getLastScriptRepeatCount() == 0 and config.conf["brailleExtender"]["speakRoutingTo"]:
 		region = braille.handler.buffer
 		if region.cursorPos is None:
 			return
@@ -112,7 +156,7 @@ def say_character_under_braille_routing_cursor(gesture):
 def script_braille_routeTo(self, gesture):
 	if braille.handler.buffer == braille.handler.mainBuffer and braille.handler.getTether() == "speech":
 		return speechhistorymode.showSpeechFromRoutingIndex(gesture.routingIndex)
-	if braille.handler._auto_scroll and braille.handler.buffer is braille.handler.mainBuffer:
+	if get_auto_scroll() and braille.handler.buffer is braille.handler.mainBuffer:
 		braille.handler.toggle_auto_scroll()
 	obj = api.getNavigatorObject()
 	if (config.conf["brailleExtender"]["routingCursorsEditFields"] in [RC_EMULATE_ARROWS_BEEP, RC_EMULATE_ARROWS_SILENT] and
@@ -159,7 +203,6 @@ def script_braille_routeTo(self, gesture):
 variationSelectorsPattern = lambda: r"([^\ufe00-\ufe0f])[\ufe00-\ufe0f]\u20E3?"
 
 
-# braille.Region.update()
 def update_region(self):
 	"""Update this region.
 	Subclasses should extend this to update L{rawText}, L{cursorPos}, L{selectionStart} and L{selectionEnd} if necessary.
@@ -223,7 +266,6 @@ def update_region(self):
 										 endBraillePos else cell for pos, cell in enumerate(self.brailleCells)]
 	if self.selectionStart is not None and self.selectionEnd is not None:
 		try:
-			# Mark the selection.
 			self.brailleSelectionStart = self.rawToBraillePos[self.selectionStart]
 			if self.selectionEnd >= len(self.rawText):
 				self.brailleSelectionEnd = len(self.brailleCells)
@@ -310,43 +352,27 @@ def update_TextInfoRegion(self):
 	self.rawText = self.rawText.rstrip("\r\n\0\v\f")
 	rawTextLen = len(self.rawText)
 	if rawTextLen < len(self._rawToContentPos):
-		# The stripped text is shorter than the original.
 		self._currentContentPos = self._rawToContentPos[rawTextLen]
 		del self.rawTextTypeforms[rawTextLen:]
-		# Trimming _rawToContentPos doesn't matter,
-		# because we'll only ever ask for indexes valid in rawText.
-		#del self._rawToContentPos[rawTextLen:]
 	if rawTextLen == 0 or not self._endsWithField:
-		# There is no text left after stripping line ending characters,
-		# or the last item added can be navigated with a cursor.
-		# Add a space in case the cursor is at the end of the reading unit.
 		self.rawText += ' '
 		rawTextLen += 1
 		self.rawTextTypeforms.append(louis.plain_text)
 		self._rawToContentPos.append(self._currentContentPos)
 	if self.cursorPos is not None and self.cursorPos >= rawTextLen:
 		self.cursorPos = rawTextLen - 1
-	# The selection end doesn't have to be checked, Region.update() makes sure brailleSelectionEnd is valid.
-
 	# If this is not the start of the object, hide all previous regions.
 	start = readingInfo.obj.makeTextInfo(textInfos.POSITION_FIRST)
 	self.hidePreviousRegions = (
 		start.compareEndPoints(readingInfo, "startToStart") < 0)
-	# Don't touch focusToHardLeft if it is already true
-	# For example, it can be set to True in getFocusContextRegions when this region represents the first new focus ancestor
-	# Alternatively, BrailleHandler._doNewObject can set this to True when this region represents the focus object and the focus ancestry didn't change
 	if not self.focusToHardLeft:
-		# If this is a multiline control, position it at the absolute left of the display when focused.
 		self.focusToHardLeft = self._isMultiline()
 	super(braille.TextInfoRegion, self).update()
 
 	if rawInputIndStart is not None:
 		assert rawInputIndEnd is not None, "rawInputIndStart set but rawInputIndEnd isn't"
-		# These are the start and end of the untranslated input area,
-		# including the start and end indicators.
 		self._brailleInputIndStart = self.rawToBraillePos[rawInputIndStart]
 		self._brailleInputIndEnd = self.rawToBraillePos[rawInputIndEnd]
-		# These are the start and end of the actual untranslated input, excluding indicators.
 		self._brailleInputStart = self._brailleInputIndStart + \
 			len(braille.INPUT_START_IND)
 		self._brailleInputEnd = self._brailleInputIndEnd - \
@@ -358,20 +384,15 @@ def update_TextInfoRegion(self):
 
 def getControlFieldBraille(info, field, ancestors, reportStart, formatConfig):
 	presCat = field.getPresentationCategory(ancestors, formatConfig)
-	# Cache this for later use.
 	field._presCat = presCat
 	role = field.get("role", get_control_type("ROLE_UNKNOWN"))
 	if reportStart:
-		# If this is a container, only report it if this is the start of the node.
 		if presCat == field.PRESCAT_CONTAINER and not field.get("_startOfNode"):
 			return None
 	else:
-		# We only report ends for containers that are not landmarks/regions
-		# and only if this is the end of the node.
 		if (
 				not field.get("_endOfNode")
 				or presCat != field.PRESCAT_CONTAINER
-				#or role == get_control_type("ROLE_LANDMARK")
 		):
 			return None
 
@@ -402,7 +423,6 @@ def getControlFieldBraille(info, field, ancestors, reportStart, formatConfig):
 		return braille.TEXT_SEPARATOR.join(text) if len(text) != 0 else None
 
 	if role in (get_control_type("ROLE_TABLECELL"), get_control_type("ROLE_TABLECOLUMNHEADER"), get_control_type("ROLE_TABLEROWHEADER")) and field.get("table-id"):
-		# Table cell.
 		reportTableHeaders = formatConfig["reportTableHeaders"]
 		reportTableCellCoords = formatConfig["reportTableCellCoords"]
 		props = {
@@ -420,8 +440,6 @@ def getControlFieldBraille(info, field, ancestors, reportStart, formatConfig):
 
 	if reportStart:
 		props = {
-			# Don't report the role for math here.
-			# However, we still need to pass it (hence "_role").
 			"_role" if role == get_control_type("ROLE_MATH") else "role": role,
 			"states": states,
 			"value": value,
@@ -431,7 +449,6 @@ def getControlFieldBraille(info, field, ancestors, reportStart, formatConfig):
 			"roleTextPost": roleTextPost
 		}
 		if field.get("alwaysReportName", False):
-			# Ensure that the name of the field gets presented even if normally it wouldn't.
 			name = field.get("name")
 			if name:
 				props["name"] = name
@@ -541,11 +558,6 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 		textColumnNumber = field.get("text-column-number")
 		oldTextColumnNumber = fieldCache.get(
 			"text-column-number") if fieldCache is not None else None
-
-		# Because we do not want to report the number of columns when a document is just opened and there is only
-		# one column. This would be verbose, in the standard case.
-		# column number has changed, or the columnCount has changed
-		# but not if the columnCount is 1 or less and there is no old columnCount.
 		if (((textColumnNumber and textColumnNumber != oldTextColumnNumber) or
 			 (textColumnCount and textColumnCount != oldTextColumnCount)) and not
 				(textColumnCount and int(textColumnCount) <= 1 and oldTextColumnCount is None)):
@@ -699,7 +711,7 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 			"text-position:sub",
 			"text-position:super"] if get_method(tag) == CHOICE_tags
 		]
-	if formatConfig["reportSpellingErrors"]:
+	if formatConfig.get("reportSpellingErrors", False):
 		tags += [tag for tag in [
 			"invalid-spelling",
 			"invalid-grammar"] if get_method(tag) == CHOICE_tags
@@ -726,34 +738,26 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 	return braille.TEXT_SEPARATOR.join([x for x in textList if x])
 
 
-# braille.TextInfoRegion._addTextWithFields
 def _addTextWithFields(self, info, formatConfig, isSelection=False):
 	shouldMoveCursorToFirstContent = not isSelection and self.cursorPos is not None
 	ctrlFields = []
 	typeform = louis.plain_text
 	formatFieldAttributesCache = getattr(
 		info.obj, "_brailleFormatFieldAttributesCache", {})
-	# When true, we are inside a clickable field, and should therefore not report any more new clickable fields
 	inClickable = False
 	for command in info.getTextWithFields(formatConfig=formatConfig):
 		if isinstance(command, str):
-			# Text should break a run of clickables
 			inClickable = False
 			self._isFormatFieldAtStart = False
 			if not command:
 				continue
 			if self._endsWithField:
-				# The last item added was a field,
-				#? so add a space before the content.
 				self.rawText += braille.TEXT_SEPARATOR
 				self.rawTextTypeforms.append(louis.plain_text)
 				self._rawToContentPos.append(self._currentContentPos)
 			if isSelection and self.selectionStart is None:
-				# This is where the content begins.
 				self.selectionStart = len(self.rawText)
 			elif shouldMoveCursorToFirstContent:
-				# This is the first piece of content after the cursor.
-				# Position the cursor here, as it may currently be positioned on control field text.
 				self.cursorPos = len(self.rawText)
 				shouldMoveCursorToFirstContent = False
 			self.rawText += command
@@ -764,7 +768,6 @@ def _addTextWithFields(self, info, formatConfig, isSelection=False):
 				range(self._currentContentPos, endPos))
 			self._currentContentPos = endPos
 			if isSelection:
-				# The last time this is set will be the end of the content.
 				self.selectionEnd = len(self.rawText)
 			self._endsWithField = False
 		elif isinstance(command, textInfos.FieldCommand):
@@ -791,8 +794,6 @@ def _addTextWithFields(self, info, formatConfig, isSelection=False):
 					if not inClickable and formatConfig['reportClickable']:
 						states = field.get('states')
 						if states and get_control_type("STATE_CLICKABLE") in states:
-							# We have entered an outer most clickable or entered a new clickable after exiting a previous one
-							# Report it if there is nothing else interesting about the field
 							field._presCat = presCat = field.getPresentationCategory(
 								ctrlFields, formatConfig)
 							if not presCat or presCat is field.PRESCAT_LAYOUT:
@@ -804,46 +805,35 @@ def _addTextWithFields(self, info, formatConfig, isSelection=False):
 					if text:
 						textList.append(text)
 					text = " ".join(textList)
-				# Place this field on a stack so we can access it for controlEnd.
 				ctrlFields.append(field)
 				if not text:
 					continue
 				if getattr(field, "_presCat") == field.PRESCAT_MARKER:
-					# In this case, the field text is what the user cares about,
-					# not the actual content.
 					fieldStart = len(self.rawText)
 					if fieldStart > 0:
-						# There'll be a space before the field text.
 						fieldStart += 1
 					if isSelection and self.selectionStart is None:
 						self.selectionStart = fieldStart
 					elif shouldMoveCursorToFirstContent:
 						self.cursorPos = fieldStart
 						shouldMoveCursorToFirstContent = False
-				# Map this field text to the start of the field's content.
 				self._addFieldText(text, self._currentContentPos,)
 			elif cmd == "controlEnd":
-				# Exiting a controlField should break a run of clickables
 				inClickable = False
 				field = ctrlFields.pop()
 				text = info.getControlFieldBraille(
 					field, ctrlFields, False, formatConfig)
 				if not text:
 					continue
-				# Map this field text to the end of the field's content.
 				self._addFieldText(text, self._currentContentPos - 1)
 			self._endsWithField = True
 	if isSelection and self.selectionStart is None:
-		# There is no selection. This is a cursor.
 		self.cursorPos = len(self.rawText)
 	if not self._skipFieldsNotAtStartOfNode:
-		# We only render fields that aren't at the start of their nodes for the first part of the reading unit.
-		# Otherwise, we'll render fields that have already been rendered.
 		self._skipFieldsNotAtStartOfNode = True
 	info.obj._brailleFormatFieldAttributesCache = formatFieldAttributesCache
 
 
-# braille.TextInfoRegion.nextLine()
 def nextLine(self):
 	dest = self._readingInfo.copy()
 	continue_ = True
@@ -857,11 +847,11 @@ def nextLine(self):
 					continue_ = False
 				else: dest = dest.obj.makeTextInfo(textInfos.POSITION_FIRST)
 			else:
-				if braille.handler._auto_scroll:
+				if get_auto_scroll():
 					braille.handler.toggle_auto_scroll()
 				return
 		if continue_ and config.conf["brailleExtender"]["skipBlankLinesScroll"] or (
-			braille.handler._auto_scroll and (
+			get_auto_scroll() and (
 				config.conf["brailleExtender"]["autoScroll"]["ignoreBlankLine"]
 				or config.conf["brailleExtender"]["autoScroll"]["adjustToContent"])
 		):
@@ -872,11 +862,16 @@ def nextLine(self):
 			continue_ = False
 	dest.collapse()
 	self._setCursor(dest)
-	queueHandler.queueFunction(queueHandler.eventQueue, speech.cancelSpeech)
-	queueHandler.queueFunction(queueHandler.eventQueue, sayCurrentLine)
+	if NVDA_HAS_SPEAK_ON_NAVIGATING_BY_UNIT:
+		from braille import _speakOnNavigatingByUnit
+		def _speakLine():
+			_speakOnNavigatingByUnit(dest.copy(), self._getReadingUnit())
+		queueHandler.queueFunction(queueHandler.eventQueue, _speakLine)
+	else:
+		queueHandler.queueFunction(queueHandler.eventQueue, speech.cancelSpeech)
+		queueHandler.queueFunction(queueHandler.eventQueue, sayCurrentLine)
 
 
-# braille.TextInfoRegion.previousLine()
 def previousLine(self, start=False):
 	dest = self._readingInfo.copy()
 	dest.collapse()
@@ -895,7 +890,7 @@ def previousLine(self, start=False):
 					dest = dest.obj.makeTextInfo(textInfos.POSITION_LAST)
 					dest.expand(unit)
 			else: return
-		if continue_ and config.conf["brailleExtender"]["skipBlankLinesScroll"] or (braille.handler._auto_scroll and config.conf["brailleExtender"]["autoScroll"]["ignoreBlankLine"]):
+		if continue_ and config.conf["brailleExtender"]["skipBlankLinesScroll"] or (get_auto_scroll() and config.conf["brailleExtender"]["autoScroll"]["ignoreBlankLine"]):
 			dest_ = dest.copy()
 			dest_.expand(textInfos.UNIT_LINE)
 			continue_ = not dest_.text.strip()
@@ -903,11 +898,16 @@ def previousLine(self, start=False):
 			continue_ = False
 	dest.collapse()
 	self._setCursor(dest)
-	queueHandler.queueFunction(queueHandler.eventQueue, speech.cancelSpeech)
-	queueHandler.queueFunction(queueHandler.eventQueue, sayCurrentLine)
+	if NVDA_HAS_SPEAK_ON_NAVIGATING_BY_UNIT:
+		from braille import _speakOnNavigatingByUnit
+		def _speakLine():
+			_speakOnNavigatingByUnit(dest.copy(), self._getReadingUnit())
+		queueHandler.queueFunction(queueHandler.eventQueue, _speakLine)
+	else:
+		queueHandler.queueFunction(queueHandler.eventQueue, speech.cancelSpeech)
+		queueHandler.queueFunction(queueHandler.eventQueue, sayCurrentLine)
 
 
-# inputCore.InputManager.executeGesture
 def executeGesture(gesture):
 	script = gesture.script
 	if "brailleDisplayDrivers" in str(type(gesture)):
@@ -932,7 +932,8 @@ def executeGesture(gesture):
 					"script_ctrl", "script_alt", "script_nvda", "script_win",
 					"script_ctrlAlt", "script_ctrlAltWin", "script_ctrlAltWinShift", "script_ctrlAltShift","script_ctrlWin","script_ctrlWinShift","script_ctrlShift","script_altWin","script_altWinShift","script_altShift","script_winShift"
 				] or (
-					not config.conf["brailleExtender"]['stopSpeechScroll']
+					not NVDA_HAS_INTERRUPT_SPEECH_WHILE_SCROLLING
+					and not config.conf["brailleExtender"]['stopSpeechScroll']
 					and script.__func__.__name__ in ["script_braille_scrollBack", "script_braille_scrollForward"]
 				)
 			)
@@ -940,10 +941,7 @@ def executeGesture(gesture):
 			gesture.speechEffectWhenExecuted = None
 	return True
 
-inputCore.decide_executeGesture.register(executeGesture)
 
-
-# brailleInput.BrailleInputHandler.sendChars()
 def sendChars(self, chars):
 	"""Sends the provided unicode characters to the system.
 	@param chars: The characters to send to the system.
@@ -951,25 +949,37 @@ def sendChars(self, chars):
 	inputs = []
 	chars = ''.join(c if ord(c) <= 0xffff else ''.join(
 			chr(x) for x in struct.unpack('>2H', c.encode("utf-16be"))) for c in chars)
-	for ch in chars:
-		for direction in (0, winUser.KEYEVENTF_KEYUP):
-			input = winUser.Input()
-			input.type = winUser.INPUT_KEYBOARD
-			input.ii.ki = winUser.KeyBdInput()
-			input.ii.ki.wScan = ord(ch)
-			input.ii.ki.dwFlags = winUser.KEYEVENTF_UNICODE | direction
-			inputs.append(input)
-	winUser.SendInput(inputs)
+	if _useWinBindings:
+		INPUT_TYPE = _user32.INPUT_TYPE
+		KEYEVENTF = _user32.KEYEVENTF
+		INPUT = _user32.INPUT
+		for ch in chars:
+			for direction in (0, KEYEVENTF.KEYUP):
+				input_ = INPUT()
+				input_.type = INPUT_TYPE.KEYBOARD
+				input_.ii.ki = _user32.KEYBDINPUT()
+				input_.ii.ki.wScan = ord(ch)
+				input_.ii.ki.dwFlags = KEYEVENTF.UNICODE | direction
+				inputs.append(input_)
+		n = len(inputs)
+		arr = (INPUT * n)(*inputs)
+		_user32.SendInput(n, arr, ctypes.sizeof(INPUT))
+	else:
+		for ch in chars:
+			for direction in (0, winUser.KEYEVENTF_KEYUP):
+				input_ = winUser.Input()
+				input_.type = winUser.INPUT_KEYBOARD
+				input_.ii.ki = winUser.KeyBdInput()
+				input_.ii.ki.wScan = ord(ch)
+				input_.ii.ki.dwFlags = winUser.KEYEVENTF_UNICODE | direction
+				inputs.append(input_)
+		winUser.SendInput(inputs)
 	focusObj = api.getFocusObject()
 	if keyboardHandler.shouldUseToUnicodeEx(focusObj):
-		# #10569: When we use ToUnicodeEx to detect typed characters,
-		# emulated keypresses aren't detected.
-		# Send TypedCharacter events manually.
 		for ch in chars:
 			focusObj.event_typedCharacter(ch=ch)
 
 
-# brailleInput.BrailleInputHandler.emulateKey()
 def emulateKey(self, key, withModifiers=True):
 	"""Emulates a key using the keyboard emulation system.
 	If emulation fails (e.g. because of an unknown key), a debug warning is logged
@@ -979,7 +989,6 @@ def emulateKey(self, key, withModifiers=True):
 	@type withModifiers: bool
 	"""
 	if withModifiers:
-		# The emulated key should be the last item in the identifier string.
 		keys = list(self.currentModifiers)
 		keys.append(key)
 		gesture = "+".join(keys)
@@ -995,13 +1004,9 @@ def emulateKey(self, key, withModifiers=True):
 		self.sendChars(key)
 
 
-# brailleInput.BrailleInputHandler.input()
 def input_(self, dots):
-	"""Handle one cell of braille input.
-	"""
-	# Insert the newly entered cell into the buffer at the cursor position.
+	"""Handle one cell of braille input."""
 	pos = self.untranslatedStart + self.untranslatedCursorPos
-	# Space ends the word.
 	endWord = dots == 0
 	continue_ = True
 	if config.conf["brailleExtender"]["oneHandedMode"]["enabled"]:
@@ -1059,12 +1064,6 @@ def input_(self, dots):
 			if res and config.conf["brailleExtender"]["advancedInputMode"]["stopAfterOneChar"]:
 				instanceGP.advancedInput = False
 		return
-	# For uncontracted braille, translate the buffer for each cell added.
-	# Any new characters produced are then sent immediately.
-	# For contracted braille, translate the buffer only when a word is ended (i.e. a space is typed).
-	# This is because later cells can change characters produced by previous cells.
-	# For example, in English grade 2, "tg" produces just "tg",
-	# but "tgr" produces "together".
 	if not self.useContractedForCurrentFocus or endWord:
 		if self._translate(endWord):
 			if not endWord:
@@ -1074,14 +1073,9 @@ def input_(self, dots):
 			speech.speakMessage(_("Unsupported input"))
 			self.flushBuffer()
 		else:
-			# This cell didn't produce any text; e.g. number sign.
 			self._reportUntranslated(pos)
 	else:
 		self._reportUntranslated(pos)
-
-# brailleInput.BrailleInputHandler._translate()
-# reason for patching: possibility to lock modifiers, display modifiers in braille during input, HUC Braille input
-
 
 def sendChar(char):
 	nvwave.playWaveFile(os.path.join(baseDir, "res/sounds/keyPress.wav"))
@@ -1109,7 +1103,6 @@ def _translate(self, endWord):
 	"""
 	assert not self.useContractedForCurrentFocus or endWord, "Must only translate contracted at end of word"
 	if self.useContractedForCurrentFocus:
-		# self.bufferText has been used by _reportContractedCell, so clear it.
 		self.bufferText = ""
 	oldTextLen = len(self.bufferText)
 	pos = self.untranslatedStart + self.untranslatedCursorPos
@@ -1122,11 +1115,7 @@ def _translate(self, endWord):
 										  data, mode=mode)[0]
 	newText = self.bufferText[oldTextLen:]
 	if newText:
-		# New text was generated by the cells just entered.
 		if self.useContractedForCurrentFocus or self.currentModifiers:
-			# For contracted braille, an entire word is sent at once.
-			# Don't speak characters as this is sent.
-			# Also, suppress typed characters when emulating a command gesture.
 			speech._suppressSpeakTypedCharacters(len(newText))
 		else:
 			self._uncontSentTime = time.time()
@@ -1134,8 +1123,6 @@ def _translate(self, endWord):
 		self.untranslatedCursorPos = 0
 		if self.currentModifiers or not self.currentFocusIsTextObj:
 			if len(newText) > 1:
-				# Emulation of multiple characters at once is unsupported
-				# Clear newText, so this function returns C{False} if not at end of word
 				newText = ""
 			else:
 				self.emulateKey(newText)
@@ -1151,8 +1138,6 @@ def _translate(self, endWord):
 			self.sendChars(newText)
 
 	if endWord or (newText and (not self.currentFocusIsTextObj or self.currentModifiers)):
-		# We only need to buffer one word.
-		# Clear the previous word (anything before the cursor) from the buffer.
 		del self.bufferBraille[:pos]
 		self.bufferText = ""
 		self.cellsWithText.clear()
@@ -1169,7 +1154,6 @@ def _translate(self, endWord):
 	return False
 
 
-# louis._createTablesString()
 def _createTablesString(tablesList):
 	"""Creates a tables string for liblouis calls"""
 	return b",".join([x.encode(sys.getfilesystemencoding()) if isinstance(x, str) else bytes(x) for x in tablesList])
@@ -1186,7 +1170,7 @@ def _displayWithCursor(self):
 			cells[self._cursorPos] |= config.conf["braille"]["cursorShapeReview"]
 	self._writeCells(cells)
 
-origGetTether = braille.BrailleHandler.getTether
+origGetTether = _originals["BrailleHandler.getTether"]
 
 def getTetherWithRoleTerminal(self):
 	if config.conf["brailleExtender"]["speechHistoryMode"]["enabled"]:
@@ -1206,41 +1190,171 @@ def getTetherWithRoleTerminal(self):
 	return origGetTether(self)
 
 
-# applying patches
-braille.getControlFieldBraille = getControlFieldBraille
-braille.getFormatFieldBraille = getFormatFieldBraille
-braille.Region.update = update_region
-braille.TextInfoRegion._addTextWithFields = _addTextWithFields
-braille.TextInfoRegion.update = update_TextInfoRegion
-braille.TextInfoRegion.previousLine = previousLine
-braille.TextInfoRegion.nextLine = nextLine
-NoInputGestureAction = inputCore.NoInputGestureAction
-brailleInput.BrailleInputHandler._translate = _translate
-brailleInput.BrailleInputHandler.emulateKey = emulateKey
-brailleInput.BrailleInputHandler.input = input_
-brailleInput.BrailleInputHandler.sendChars = sendChars
-globalCommands.GlobalCommands.script_braille_routeTo = script_braille_routeTo
-louis._createTablesString = _createTablesString
-script_braille_routeTo.__doc__ = origFunc["script_braille_routeTo"].__doc__
-braille.NVDAObjectRegion.update = update_NVDAObjectRegion
-braille.getPropertiesBraille = getPropertiesBraille
+_patchesApplied = False
+_appliedPatches: set = set()
 
-# This variable tells if braille region should parse undefined characters
-braille.Region.parseUndefinedChars = True
+
+def _try_apply(name: str, apply_fn) -> bool:
+	"""Try to apply a patch. Log on failure. Return True if applied."""
+	try:
+		apply_fn()
+		_appliedPatches.add(name)
+		return True
+	except Exception as e:
+		log.warning("BrailleExtender: Could not apply patch %s: %s", name, e, exc_info=True)
+		return False
+
+
+def apply_patches() -> None:
+	"""Apply all BrailleExtender patches to NVDA core. Called at add-on load.
+	Each patch is tried individually; failures are logged but do not prevent other patches.
+	"""
+	global _patchesApplied
+
+	def _apply_braille_region():
+		braille.getControlFieldBraille = getControlFieldBraille
+		braille.getFormatFieldBraille = getFormatFieldBraille
+		braille.Region.update = update_region
+		braille.TextInfoRegion._addTextWithFields = _addTextWithFields
+		braille.TextInfoRegion.update = update_TextInfoRegion
+		braille.TextInfoRegion.previousLine = previousLine
+		braille.TextInfoRegion.nextLine = nextLine
+		braille.NVDAObjectRegion.update = update_NVDAObjectRegion
+		braille.getPropertiesBraille = getPropertiesBraille
+		braille.Region.parseUndefinedChars = True
+		braille.Region.brlex_typeforms = {}
+		braille.Region._len_brlex_typeforms = 0
+		if _originals.get("TextInfoRegion._getTypeformFromFormatField"):
+			pass  # Restored in unload
+	_try_apply("braille_region", _apply_braille_region)
+
+	def _apply_braille_input():
+		brailleInput.BrailleInputHandler._translate = _translate
+		brailleInput.BrailleInputHandler.emulateKey = emulateKey
+		brailleInput.BrailleInputHandler.input = input_
+		brailleInput.BrailleInputHandler.sendChars = sendChars
+	_try_apply("braille_input", _apply_braille_input)
+
+	def _apply_route_to():
+		globalCommands.GlobalCommands.script_braille_routeTo = script_braille_routeTo
+		if origFunc.get("script_braille_routeTo") and getattr(origFunc["script_braille_routeTo"], "__doc__", None):
+			script_braille_routeTo.__doc__ = origFunc["script_braille_routeTo"].__doc__
+	_try_apply("script_braille_routeTo", _apply_route_to)
+
+	if hasattr(louis, "_createTablesString"):
+		def _apply_louis():
+			louis._createTablesString = _createTablesString
+		_try_apply("louis_createTablesString", _apply_louis)
+
+	def _apply_braille_handler():
+		braille.BrailleHandler.AutoScroll = autoscroll.AutoScroll
+		braille.BrailleHandler._auto_scroll = None
+		braille.BrailleHandler.get_auto_scroll_delay = autoscroll.get_auto_scroll_delay
+		braille.BrailleHandler.get_dynamic_auto_scroll_delay = autoscroll.get_dynamic_auto_scroll_delay
+		braille.BrailleHandler.decrease_auto_scroll_delay = autoscroll.decrease_auto_scroll_delay
+		braille.BrailleHandler.increase_auto_scroll_delay = autoscroll.increase_auto_scroll_delay
+		braille.BrailleHandler.report_auto_scroll_delay = autoscroll.report_auto_scroll_delay
+		braille.BrailleHandler.toggle_auto_scroll = autoscroll.toggle_auto_scroll
+		braille.BrailleHandler._displayWithCursor = _displayWithCursor
+		braille.BrailleHandler.getTether = getTetherWithRoleTerminal
+	_try_apply("braille_handler", _apply_braille_handler)
+
+	def _apply_execute_gesture():
+		inputCore.decide_executeGesture.register(executeGesture)
+	_try_apply("executeGesture", _apply_execute_gesture)
+
+	_patchesApplied = len(_appliedPatches) > 0
+	if not _patchesApplied:
+		log.error("BrailleExtender: No patches could be applied; add-on may not function correctly")
+	else:
+		log.debug("BrailleExtender: Applied %d patch groups: %s", len(_appliedPatches), _appliedPatches)
+
+
+def is_patch_applied(name: str) -> bool:
+	"""Return True if the given patch group was successfully applied."""
+	return name in _appliedPatches
+
+
+def get_auto_scroll():
+	"""Return braille.handler._auto_scroll if autoscroll patch is applied, else None."""
+	if "braille_handler" not in _appliedPatches:
+		return None
+	return getattr(braille.handler, "_auto_scroll", None)
+
+_executeGestureHandler = executeGesture
 REASON_CARET = get_output_reason("CARET")
 
-braille.Region.brlex_typeforms = {}
-braille.Region._len_brlex_typeforms = 0
 
-braille.BrailleHandler.AutoScroll = autoscroll.AutoScroll
-braille.BrailleHandler._auto_scroll = None
-braille.BrailleHandler.get_auto_scroll_delay = autoscroll.get_auto_scroll_delay
-braille.BrailleHandler.get_dynamic_auto_scroll_delay = autoscroll.get_dynamic_auto_scroll_delay
-braille.BrailleHandler.decrease_auto_scroll_delay = autoscroll.decrease_auto_scroll_delay
-braille.BrailleHandler.increase_auto_scroll_delay = autoscroll.increase_auto_scroll_delay
-braille.BrailleHandler.report_auto_scroll_delay = autoscroll.report_auto_scroll_delay
-braille.BrailleHandler.toggle_auto_scroll = autoscroll.toggle_auto_scroll
-braille.BrailleHandler._displayWithCursor = _displayWithCursor
+def unload_patches() -> None:
+	"""Restore only the patches that were successfully applied."""
+	global _patchesApplied
+	if not _patchesApplied:
+		return
+	_patchesApplied = False
+	applied = _appliedPatches.copy()
+	_appliedPatches.clear()
 
-REASON_CARET = get_output_reason("CARET")
-braille.BrailleHandler.getTether = getTetherWithRoleTerminal
+	if "executeGesture" in applied:
+		try:
+			inputCore.decide_executeGesture.unregister(_executeGestureHandler)
+		except Exception:
+			pass
+
+	if "braille_region" in applied:
+		try:
+			braille.getControlFieldBraille = _originals["getControlFieldBraille"]
+			braille.getFormatFieldBraille = _originals["getFormatFieldBraille"]
+			braille.Region.update = _originals["Region.update"]
+			braille.TextInfoRegion._addTextWithFields = _originals["TextInfoRegion._addTextWithFields"]
+			braille.TextInfoRegion.update = _originals["TextInfoRegion.update"]
+			braille.TextInfoRegion.previousLine = _originals["TextInfoRegion.previousLine"]
+			braille.TextInfoRegion.nextLine = _originals["TextInfoRegion.nextLine"]
+			if _originals.get("TextInfoRegion._getTypeformFromFormatField"):
+				braille.TextInfoRegion._getTypeformFromFormatField = _originals["TextInfoRegion._getTypeformFromFormatField"]
+			braille.NVDAObjectRegion.update = _originals["NVDAObjectRegion.update"]
+			braille.getPropertiesBraille = _originals["getPropertiesBraille"]
+			for attr in ("parseUndefinedChars", "brlex_typeforms", "_len_brlex_typeforms"):
+				try:
+					delattr(braille.Region, attr)
+				except AttributeError:
+					pass
+		except Exception as e:
+			log.warning("BrailleExtender: Error restoring braille_region patches: %s", e)
+
+	if "braille_input" in applied:
+		try:
+			brailleInput.BrailleInputHandler._translate = _originals["BrailleInputHandler._translate"]
+			brailleInput.BrailleInputHandler.emulateKey = _originals["BrailleInputHandler.emulateKey"]
+			brailleInput.BrailleInputHandler.input = _originals["BrailleInputHandler.input"]
+			brailleInput.BrailleInputHandler.sendChars = _originals["BrailleInputHandler.sendChars"]
+		except Exception as e:
+			log.warning("BrailleExtender: Error restoring braille_input patches: %s", e)
+
+	if "script_braille_routeTo" in applied:
+		try:
+			globalCommands.GlobalCommands.script_braille_routeTo = _originals["script_braille_routeTo"]
+		except Exception as e:
+			log.warning("BrailleExtender: Error restoring script_braille_routeTo: %s", e)
+
+	if "braille_handler" in applied:
+		try:
+			braille.BrailleHandler.getTether = _originals["BrailleHandler.getTether"]
+			if _originals.get("BrailleHandler._displayWithCursor"):
+				braille.BrailleHandler._displayWithCursor = _originals["BrailleHandler._displayWithCursor"]
+			for attr in ("AutoScroll", "_auto_scroll", "get_auto_scroll_delay", "get_dynamic_auto_scroll_delay",
+					"decrease_auto_scroll_delay", "increase_auto_scroll_delay", "report_auto_scroll_delay",
+					"toggle_auto_scroll"):
+				try:
+					delattr(braille.BrailleHandler, attr)
+				except AttributeError:
+					pass
+		except Exception as e:
+			log.warning("BrailleExtender: Error restoring braille_handler patches: %s", e)
+
+	if "louis_createTablesString" in applied and "_createTablesString" in _originals:
+		try:
+			louis._createTablesString = _originals["_createTablesString"]
+		except Exception as e:
+			log.warning("BrailleExtender: Error restoring louis patch: %s", e)
+
+	log.info("BrailleExtender patches unloaded")

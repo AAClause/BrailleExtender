@@ -3,9 +3,13 @@
 # Part of BrailleExtender addon for NVDA
 # Copyright 2016-2020 André-Abush CLAUSE, released under GPL.
 
+from __future__ import annotations
+
 import os
+import re
 
 import addonHandler
+import versionInfo
 import controlTypes
 import globalVars
 import languageHandler
@@ -28,6 +32,34 @@ addonGitHubURL = "https://github.com/aaclause/BrailleExtender/"
 addonAuthor = addonHandler.Addon(addonDir).manifest["author"]
 addonDesc = addonHandler.Addon(addonDir).manifest["description"]
 addonUpdateChannel = addonHandler.Addon(addonDir).manifest["updateChannel"]
+
+
+def nvdaVersionAtLeast(year: int, major: int, minor: int = 0) -> bool:
+	"""Check if current NVDA version is >= year.major.minor.
+	Import from common for custom version checks, e.g. nvdaVersionAtLeast(2024, 4).
+	"""
+	try:
+		parts = versionInfo.version.split(".", 2)
+		def _intPart(s):
+			m = re.search(r"\d+", s)
+			return int(m.group()) if m else 0
+		vYear = _intPart(parts[0]) if len(parts) > 0 else 0
+		vMajor = _intPart(parts[1]) if len(parts) > 1 else 0
+		vMinor = _intPart(parts[2]) if len(parts) > 2 else 0
+		return (vYear, vMajor, vMinor) >= (year, major, minor)
+	except (ValueError, IndexError, AttributeError):
+		return False
+
+
+# NVDA core features (from changelog), used for addon compatibility:
+# - 2022.3: interruptSpeechWhileScrolling (speech interrupt when scrolling)
+# - 2024.4: speakOnRouting (announce character when routing cursor)
+# - 2025.1: speakOnNavigatingByUnit, automatic braille table selection (inputTable/translationTable "auto")
+NVDA_HAS_INTERRUPT_SPEECH_WHILE_SCROLLING = nvdaVersionAtLeast(2022, 3)
+NVDA_HAS_SPEAK_ON_ROUTING = nvdaVersionAtLeast(2024, 4)
+NVDA_HAS_SPEAK_ON_NAVIGATING_BY_UNIT = nvdaVersionAtLeast(2025, 1)
+NVDA_HAS_AUTOMATIC_BRAILLE_TABLES = nvdaVersionAtLeast(2025, 1)
+
 
 lang = languageHandler.getLanguage().split('_')[-1].lower()
 punctuationSeparator = ' ' if 'fr' in lang else ''

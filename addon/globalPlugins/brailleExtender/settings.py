@@ -3,16 +3,15 @@
 # Part of BrailleExtender addon for NVDA
 # Copyright 2016-2020 André-Abush CLAUSE, released under GPL.
 
-import hashlib
-import json
 import os
 
 import addonHandler
 import braille
+import brailleInput
+import brailleTables
 import config
 import controlTypes
 import core
-import glob
 import gui
 import inputCore
 import queueHandler
@@ -24,7 +23,10 @@ from logHandler import log
 from . import addoncfg
 from . import utils
 from .advancedinput import SettingsDlg as AdvancedInputModeDlg
-from .common import addonName, baseDir, punctuationSeparator, RC_NORMAL
+from .common import (
+	addonName, punctuationSeparator, RC_NORMAL,
+	NVDA_HAS_INTERRUPT_SPEECH_WHILE_SCROLLING, NVDA_HAS_SPEAK_ON_ROUTING, NVDA_HAS_SPEAK_ON_NAVIGATING_BY_UNIT,
+)
 from .autoscroll import SettingsDlg as AutoScrollDlg
 from .documentformatting import SettingsDlg as DocumentFormattingDlg
 from .objectpresentation import SettingsDlg as ObjectPresentationDlg
@@ -47,8 +49,9 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 
 	# Translators: title of a dialog.
 	title = _("General")
-	bds_k = [k for k, v in addoncfg.getValidBrailleDisplayPrefered()]
-	bds_v = [v for k, v in addoncfg.getValidBrailleDisplayPrefered()]
+	_bds = addoncfg.getValidBrailleDisplayPrefered()
+	bds_k = [k for k, v in _bds]
+	bds_v = [v for k, v in _bds]
 
 	def makeSettings(self, settingsSizer):
 		sHelper = gui.guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
@@ -71,10 +74,16 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 		# Translators: label of a dialog.
 		self.speakScroll = sHelper.addLabeledControl(_("Say current line while &scrolling in:"), wx.Choice, choices=list(addoncfg.focusOrReviewChoices.values()))
 		self.speakScroll.SetSelection(list(addoncfg.focusOrReviewChoices.keys()).index(config.conf["brailleExtender"]["speakScroll"]))
+		if NVDA_HAS_SPEAK_ON_NAVIGATING_BY_UNIT:
+			self.speakScroll.Enable(False)
+			sHelper.addItem(wx.StaticText(self, label=_("Use NVDA Braille settings → \"Speak when navigating by line or paragraph\" (since 2025.1)")))
 
 		# Translators: label of a dialog.
 		self.stopSpeechScroll = sHelper.addItem(wx.CheckBox(self, label=_("Speech &interrupt when scrolling on same line")))
 		self.stopSpeechScroll.SetValue(config.conf["brailleExtender"]["stopSpeechScroll"])
+		if NVDA_HAS_INTERRUPT_SPEECH_WHILE_SCROLLING:
+			self.stopSpeechScroll.Enable(False)
+			sHelper.addItem(wx.StaticText(self, label=_("Use NVDA Braille settings → \"Interrupt speech while scrolling\" (since 2022.3)")))
 
 		# Translators: label of a dialog.
 		self.skipBlankLinesScroll = sHelper.addItem(wx.CheckBox(self, label=_("S&kip blank lines during text scrolling")))
@@ -91,6 +100,9 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 		# Translators: label of a dialog.
 		self.speakRoutingTo = sHelper.addItem(wx.CheckBox(self, label=_("Announce character when &routing braille cursor")))
 		self.speakRoutingTo.SetValue(config.conf["brailleExtender"]["speakRoutingTo"])
+		if NVDA_HAS_SPEAK_ON_ROUTING:
+			self.speakRoutingTo.Enable(False)
+			sHelper.addItem(wx.StaticText(self, label=_("Use NVDA Braille settings → \"Speak character when routing cursor in text\" (since 2024.4)")))
 
 		# Translators: label of a dialog.
 		label = _("Routing cursors behavior in edit &fields:")
@@ -101,8 +113,8 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 			itemToSelect = list(addoncfg.routingCursorsEditFields_labels.keys()).index(RC_NORMAL)
 		self.routingCursorsEditFields.SetSelection(itemToSelect)
 
-		# Translators: label of a dialog.
-		self.hourDynamic = sHelper.addItem(wx.CheckBox(self, label=_("&Display time and date infinitely")))
+		# Translators: label of a dialog. When enabled, the time and date shown by the hour/date gesture updates every second and stays visible on the main braille buffer.
+		self.hourDynamic = sHelper.addItem(wx.CheckBox(self, label=_("&Update time and date every second (keeps it visible on the main braille buffer)")))
 		self.hourDynamic.SetValue(config.conf["brailleExtender"]["hourDynamic"])
 		self.reviewModeTerminal = sHelper.addItem(wx.CheckBox(self, label=_("Automatically Switch to review mode in &terminal windows (cmd, bash, PuTTY, PowerShell Maxima…)")))
 		self.reviewModeTerminal.SetValue(config.conf["brailleExtender"]["reviewModeTerminal"])
@@ -174,7 +186,7 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 		config.conf["brailleExtender"]["brailleDisplay1"] = self.bds_k[self.brailleDisplay1.GetSelection()]
 		config.conf["brailleExtender"]["brailleDisplay2"] = self.bds_k[self.brailleDisplay2.GetSelection()]
 		if addoncfg.gesturesFileExists:
-			config.conf["brailleExtender"]["keyboardLayout_%s" % addoncfg.curBD] = addoncfg.iniProfile["keyboardLayouts"].keys()[self.KBMode.GetSelection()]
+			config.conf["brailleExtender"]["keyboardLayout_%s" % addoncfg.curBD] = list(addoncfg.iniProfile["keyboardLayouts"].keys())[self.KBMode.GetSelection()]
 		config.conf["brailleExtender"]["routingCursorsEditFields"] = list(addoncfg.routingCursorsEditFields_labels.keys())[self.routingCursorsEditFields.GetSelection()]
 		config.conf["brailleExtender"]["volumeChangeFeedback"] = list(addoncfg.outputMessage.keys())[self.volumeChangeFeedback.GetSelection()]
 		config.conf["brailleExtender"]["modifierKeysFeedback"] = list(addoncfg.outputMessage.keys())[self.modifierKeysFeedback.GetSelection()]
@@ -186,50 +198,88 @@ class BrailleTablesDlg(gui.settingsDialogs.SettingsPanel):
 	# Translators: title of a dialog.
 	title = _("Braille tables")
 
+	def _getOutputTablesData(self):
+		data = [(t[0], t[1]) for t in addoncfg.tables if t.output]
+		if utils.supportsAutomaticBrailleTables():
+			data.insert(0, ("auto", utils.getAutomaticTableDisplayName(brailleTables.TableType.OUTPUT)))
+		return data
+
+	def _getInputTablesData(self):
+		data = [(t[0], t[1]) for t in addoncfg.tables if t.input]
+		if utils.supportsAutomaticBrailleTables():
+			data.insert(0, ("auto", utils.getAutomaticTableDisplayName(brailleTables.TableType.INPUT)))
+		return data
+
 	def makeSettings(self, settingsSizer):
-		self.oTables = set(addoncfg.outputTables)
-		self.iTables = set(addoncfg.inputTables)
-		lt = [_("Use the current input table")]
-		for table in addoncfg.tables:
-			if table.output and not table.contracted: lt.append(table[1])
-			if config.conf["brailleExtender"]["inputTableShortcuts"] in addoncfg.tablesUFN:
-				iSht = addoncfg.tablesUFN.index(config.conf["brailleExtender"]["inputTableShortcuts"]) + 1
-			else: iSht = 0
+		outputData = self._getOutputTablesData()
+		inputData = self._getInputTablesData()
+		outputFNs = [t[0] for t in outputData]
+		inputFNs = [t[0] for t in inputData]
+
+		activeOutput = utils.getActiveOutputTableForSwitch()
+		activeInput = utils.getActiveInputTableForSwitch()
+		self.oTables = set(addoncfg.outputTables or []) | {activeOutput}
+		self.iTables = set(addoncfg.inputTables or []) | {activeInput}
+		self.oTables &= set(outputFNs)
+		self.iTables &= set(inputFNs)
+		self.oTables.add(activeOutput)
+		self.iTables.add(activeInput)
+
 		sHelper = gui.guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
-		bHelper1 = gui.guiHelper.ButtonHelper(orientation=wx.HORIZONTAL)
 
-		self.tables = sHelper.addLabeledControl(_("Prefered braille &tables (press F1 for help):"), wx.Choice, choices=self.getTablesWithSwitches())
-		self.tables.SetSelection(0)
-		self.tables.Bind(wx.EVT_CHAR, self.onTables)
+		outputChoices = [t[1] for t in outputData]
+		self.outputTablesList = sHelper.addLabeledControl(
+			_("Preferred &output braille tables:"),
+			gui.nvdaControls.CustomCheckListBox,
+			choices=outputChoices
+		)
+		self.outputTablesList.CheckedItems = [i for i, (fn, _dn) in enumerate(outputData) if fn in self.oTables]
 
+		inputChoices = [t[1] for t in inputData]
+		self.inputTablesList = sHelper.addLabeledControl(
+			_("Preferred &input braille tables:"),
+			gui.nvdaControls.CustomCheckListBox,
+			choices=inputChoices
+		)
+		self.inputTablesList.CheckedItems = [i for i, (fn, _dn) in enumerate(inputData) if fn in self.iTables]
+
+		lt = [_("Use the current input table")]
+		for t in addoncfg.tables:
+			if t.output and not t.contracted:
+				lt.append(t[1])
+		iSht = addoncfg.tablesUFN.index(config.conf["brailleExtender"]["inputTableShortcuts"]) + 1 if config.conf["brailleExtender"]["inputTableShortcuts"] in addoncfg.tablesUFN else 0
 		self.inputTableShortcuts = sHelper.addLabeledControl(_("Input braille table for &keyboard shortcut keys:"), wx.Choice, choices=lt)
 		self.inputTableShortcuts.SetSelection(iSht)
-		lt = [_('None')]
-		for table in addoncfg.tables:
-			if table.output: lt.append(table[1])
-		self.postTable = sHelper.addLabeledControl(_("&Secondary output table:"), wx.Choice, choices=lt)
-		self.postTable.SetSelection(addoncfg.tablesFN.index(config.conf["brailleExtender"]["postTable"]) if config.conf["brailleExtender"]["postTable"] in addoncfg.tablesFN else 0)
 
-		# Translators: label of a dialog.
+		postOutputFNs = [t[0] for t in addoncfg.tables if t.output]
+		lt = [_('None')] + [t[1] for t in addoncfg.tables if t.output]
+		postTableVal = config.conf["brailleExtender"]["postTable"]
+		postIdx = postOutputFNs.index(postTableVal) + 1 if postTableVal in postOutputFNs else 0
+		self.postTable = sHelper.addLabeledControl(_("&Secondary output table:"), wx.Choice, choices=lt)
+		self.postTable.SetSelection(postIdx)
+
 		self.tabSpace = sHelper.addItem(wx.CheckBox(self, label=_("Display &tabs as spaces")))
 		self.tabSpace.SetValue(config.conf["brailleExtender"]["tabSpace"])
 
-		# Translators: label of a dialog.
 		self.tabSize = sHelper.addLabeledControl(_("&Spaces per tab for the active braille display:"), gui.nvdaControls.SelectOnFocusSpinCtrl, min=1, max=42, initial=int(config.conf["brailleExtender"]["tabSize_%s" % addoncfg.curBD]))
-		self.customBrailleTablesBtn = bHelper1.addButton(self, wx.NewId(), _("Alternative and &custom braille tables..."), wx.DefaultPosition)
-		self.customBrailleTablesBtn.Bind(wx.EVT_BUTTON, self.onCustomBrailleTablesBtn)
-		sHelper.addItem(bHelper1)
 
-	def postInit(self): self.tables.SetFocus()
+	def postInit(self):
+		self.outputTablesList.SetFocus()
 
 	def onSave(self):
-		config.conf["brailleExtender"]["outputTables"] = ','.join(self.oTables)
-		config.conf["brailleExtender"]["inputTables"] = ','.join(self.iTables)
+		outputData = self._getOutputTablesData()
+		inputData = self._getInputTablesData()
+		self.oTables = {outputData[i][0] for i in range(self.outputTablesList.GetCount()) if self.outputTablesList.IsChecked(i)}
+		self.iTables = {inputData[i][0] for i in range(self.inputTablesList.GetCount()) if self.inputTablesList.IsChecked(i)}
+
+		config.conf["brailleExtender"]["outputTables"] = ','.join(sorted(self.oTables))
+		config.conf["brailleExtender"]["inputTables"] = ','.join(sorted(self.iTables))
 		config.conf["brailleExtender"]["inputTableShortcuts"] = addoncfg.tablesUFN[self.inputTableShortcuts.GetSelection() - 1] if self.inputTableShortcuts.GetSelection() > 0 else '?'
 		addoncfg.loadPreferedTables()
+
+		postOutputFNs = [t[0] for t in addoncfg.tables if t.output]
 		postTableID = self.postTable.GetSelection()
-		postTable = "None" if postTableID == 0 else addoncfg.tablesFN[postTableID]
-		config.conf["brailleExtender"]["postTable"] = postTable
+		config.conf["brailleExtender"]["postTable"] = "None" if postTableID == 0 else postOutputFNs[postTableID - 1]
 		if self.tabSpace.IsChecked() and config.conf["brailleExtender"]["tabSpace"] != self.tabSpace.IsChecked():
 			restartRequired = True
 		else: restartRequired = False
@@ -242,193 +292,6 @@ class BrailleTablesDlg(gui.settingsDialogs.SettingsPanel):
 				style=wx.YES_NO|wx.ICON_INFORMATION
 			)
 			if res == wx.YES: core.restart()
-
-	def getTablesWithSwitches(self):
-		out = []
-		for i, tbl in enumerate(addoncfg.tablesTR):
-			out.append("%s%s: %s" % (tbl, punctuationSeparator, self.getInSwitchesText(addoncfg.tablesFN[i])))
-		return out
-
-	def getCurrentSelection(self):
-		idx = self.tables.GetSelection()
-		tbl = addoncfg.tablesFN[self.tables.GetSelection()]
-		return idx, tbl
-
-	def setCurrentSelection(self, tbl, newLoc):
-		if newLoc == "io":
-			self.iTables.add(tbl)
-			self.oTables.add(tbl)
-		elif newLoc == "i":
-			self.iTables.add(tbl)
-			self.oTables.discard(tbl)
-		elif newLoc == "o":
-			self.oTables.add(tbl)
-			self.iTables.discard(tbl)
-		elif newLoc == "n":
-			self.iTables.discard(tbl)
-			self.oTables.discard(tbl)
-
-	def inSwitches(self, tbl):
-		inp = tbl in self.iTables
-		out = tbl in self.oTables
-		return [inp, out]
-
-	def getInSwitchesText(self, tbl):
-		inS = self.inSwitches(tbl)
-		if all(inS): inSt = _("input and output")
-		elif not any(inS): inSt = _("none")
-		elif inS[0]: inSt = _("input only")
-		elif inS[1]: inSt = _("output only")
-		return inSt
-
-	def changeSwitch(self, tbl, direction=1, loop=True):
-		dirs = ['n', 'i', 'o', "io"]
-		iCurDir = 0
-		inS = self.inSwitches(tbl)
-		if all(inS): iCurDir = dirs.index("io")
-		elif not any(inS): iCurDir = dirs.index('n')
-		elif inS[0]: iCurDir = dirs.index('i')
-		elif inS[1]: iCurDir = dirs.index('o')
-
-		if len(dirs)-1 == iCurDir and direction == 1 and loop: newDir = dirs[0]
-		elif iCurDir == 0 and direction == 0 and loop: newDir = dirs[-1]
-		elif iCurDir < len(dirs)-1 and direction == 1: newDir = dirs[iCurDir+1]
-		elif iCurDir > 0 and iCurDir < len(dirs) and direction == 0: newDir = dirs[iCurDir-1]
-		else: return
-		self.setCurrentSelection(tbl, newDir)
-
-	def onCustomBrailleTablesBtn(self, evt):
-		customBrailleTablesDlg = CustomBrailleTablesDlg(self, multiInstanceAllowed=True)
-		customBrailleTablesDlg.ShowModal()
-
-	def onTables(self, evt):
-		keycode = evt.GetKeyCode()
-		if keycode in [ord(','), ord(';')]:
-			idx, tbl = self.getCurrentSelection()
-			if keycode == ord(','):
-				queueHandler.queueFunction(queueHandler.eventQueue, ui.message, "%s" % tbl)
-			else:
-				ui.browseableMessage('\n'.join([
-					_("Table name: %s") % addoncfg.tablesTR[idx],
-					_("File name: %s") % tbl,
-					_("In switches: %s") % self.getInSwitchesText(tbl)
-					]), _("About this table"), False)
-		if keycode == wx.WXK_F1:
-			ui.browseableMessage(
-				_("""Braille tables usable from NVDA are listed. Press space, left arrow, or right arrow keys to include (or exclude) the selected table in switches.\n
-			You can also press 'comma' key to get the file name of the selected table, and 'semicolon' key to view miscellaneous information on the selected table."""),
-			_("Contextual help"), False)
-		if keycode in [wx.WXK_LEFT, wx.WXK_RIGHT, wx.WXK_SPACE]:
-			idx, tbl = self.getCurrentSelection()
-			if keycode == wx.WXK_LEFT: self.changeSwitch(tbl, 0, False)
-			elif keycode == wx.WXK_RIGHT: self.changeSwitch(tbl, 1, False)
-			elif keycode == wx.WXK_SPACE: self.changeSwitch(tbl, 1, True)
-			newSwitch = self.getInSwitchesText(tbl)
-			self.tables.SetString(self.tables.GetSelection(), "%s%s: %s" % (addoncfg.tablesTR[idx], punctuationSeparator, newSwitch))
-			queueHandler.queueFunction(queueHandler.eventQueue, ui.message, "%s" % newSwitch)
-			utils.refreshBD()
-		else: evt.Skip()
-
-
-class CustomBrailleTablesDlg(gui.settingsDialogs.SettingsDialog):
-
-	# Translators: title of a dialog.
-	title = "Braille Extender - %s" % _("Custom braille tables")
-	providedTablesPath = "%s/res/brailleTables.json" % baseDir
-	userTablesPath = "%s/brailleTables.json" % addoncfg.configDir
-
-	def makeSettings(self, settingsSizer):
-		self.providedTables = self.getBrailleTablesFromJSON(self.providedTablesPath)
-		self.userTables = self.getBrailleTablesFromJSON(self.userTablesPath)
-		wx.CallAfter(notImplemented)
-		sHelper = gui.guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
-		bHelper1 = gui.guiHelper.ButtonHelper(orientation=wx.HORIZONTAL)
-		self.inTable = sHelper.addItem(wx.CheckBox(self, label=_("Use a custom table as &input table")))
-		self.outTable = sHelper.addItem(wx.CheckBox(self, label=_("Use a custom table as &output table")))
-		self.addBrailleTablesBtn = bHelper1.addButton(self, wx.NewId(), _("&Add a braille table..."), wx.DefaultPosition)
-		self.addBrailleTablesBtn.Bind(wx.EVT_BUTTON, self.onAddBrailleTablesBtn)
-		sHelper.addItem(bHelper1)
-
-	@staticmethod
-	def getBrailleTablesFromJSON(path):
-		if not os.path.exists(path):
-			path = "%s/%s" % (baseDir, path)
-			if not os.path.exists(path): return {}
-		f = open(path)
-		return json.load(f)
-
-	def onAddBrailleTablesBtn(self, evt):
-		addBrailleTablesDlg = AddBrailleTablesDlg(self, multiInstanceAllowed=True)
-		addBrailleTablesDlg.ShowModal()
-
-	def postInit(self): self.inTable.SetFocus()
-
-	def onOk(self, event):
-		super().onOk(evt)
-
-
-class AddBrailleTablesDlg(gui.settingsDialogs.SettingsDialog):
-	# Translators: title of a dialog.
-	title = "Braille Extender - %s" % _("Add a braille table")
-	tbl = []
-
-	def makeSettings(self, settingsSizer):
-		sHelper = gui.guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
-		bHelper1 = gui.guiHelper.ButtonHelper(orientation=wx.HORIZONTAL)
-		self.name = sHelper.addLabeledControl(_("Display &name"), wx.TextCtrl)
-		self.description = sHelper.addLabeledControl(_("&Description"), wx.TextCtrl, style = wx.TE_MULTILINE|wx.TE_PROCESS_ENTER, size = (360, 90), pos=(-1,-1))
-		self.path = sHelper.addLabeledControl(_("&Path"), wx.TextCtrl)
-		self.browseBtn = bHelper1.addButton(self, wx.NewId(), _("&Browse..."), wx.DefaultPosition)
-		self.browseBtn.Bind(wx.EVT_BUTTON, self.onBrowseBtn)
-		sHelper.addItem(bHelper1)
-		self.isContracted = sHelper.addItem(wx.CheckBox(self, label=_("This is a &contracted (grade 2) braille table")))
-		# Translators: label of a dialog.
-		self.inputOrOutput = sHelper.addLabeledControl(_("&Available for:"), wx.Choice, choices=[_("Input and output"), _("Input only"), _("Output only")])
-		self.inputOrOutput.SetSelection(0)
-
-	def postInit(self): self.name.SetFocus()
-
-	def onBrowseBtn(self, event):
-		dlg = wx.FileDialog(None, _("Choose a braille table file"), "%PROGRAMFILES%", "", "%s (*.ctb, *.cti, *.utb, *.uti)|*.ctb;*.cti;*.utb;*.uti" % _("Liblouis table files"), style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST)
-		if dlg.ShowModal() != wx.ID_OK:
-			dlg.Destroy()
-			return self.path.SetFocus()
-		self.path.SetValue(dlg.GetDirectory() + '\\' + dlg.GetFilename())
-		dlg.Destroy()
-		self.path.SetFocus()
-
-	def onOk(self, event):
-		path = self.path.GetValue().strip().encode("UTF-8")
-		displayName = self.name.GetValue().strip()
-		if not displayName:
-			gui.messageBox(_("Please specify a display name."), _("Invalid display name"), wx.OK|wx.ICON_ERROR)
-			self.name.SetFocus()
-			return
-		if not os.path.exists(path.decode("UTF-8").encode("mbcs")):
-			gui.messageBox(_("The specified path is not valid (%s).") % path.decode("UTF-8"), _("Invalid path"), wx.OK|wx.ICON_ERROR)
-			self.path.SetFocus()
-			return
-		switch_possibleValues = ["both", "input", "output"]
-		v = "%s|%s|%s|%s" % (
-			switch_possibleValues[self.inputOrOutput.GetSelection()],
-			self.isContracted.IsChecked(), path.decode("UTF-8"), displayName
-		)
-		k = hashlib.md5(path).hexdigest()[:15]
-		config.conf["brailleExtender"]["brailleTables"][k] = v
-		super().onOk(evt)
-
-	@staticmethod
-	def getAvailableBrailleTables():
-		out = []
-		brailleTablesDir = addoncfg.brailleTables.TABLES_DIR
-		ls = glob.glob(brailleTablesDir+'\\*.ctb')+glob.glob(brailleTablesDir+'\\*.cti')+glob.glob(brailleTablesDir+'\\*.utb')
-		for i, e in enumerate(ls):
-			e = str(e.split('\\')[-1])
-			if e in addoncfg.tablesFN or e.lower() in addoncfg.tablesFN: del ls[i]
-			else: out.append(e.lower())
-		out = sorted(out)
-		return out
-
 
 class QuickLaunchesDlg(gui.settingsDialogs.SettingsDialog):
 
@@ -449,9 +312,9 @@ class QuickLaunchesDlg(gui.settingsDialogs.SettingsDialog):
 		self.quickKeys.Bind(wx.EVT_CHOICE, self.onQuickKeys)
 		self.target = sHelper.addLabeledControl(_("&Location (file path, URL or command)"), wx.TextCtrl, value=self.quickLaunchLocations[0] if self.quickLaunchLocations != [] else '')
 		self.target.Bind(wx.EVT_TEXT, self.onTarget)
-		self.browseBtn = bHelper1.addButton(self, wx.NewId(), _("&Browse..."), wx.DefaultPosition)
-		self.removeGestureBtn = bHelper1.addButton(self, wx.NewId(), _("&Remove this gesture"), wx.DefaultPosition)
-		self.addGestureBtn = bHelper1.addButton(self, wx.NewId(), _("&Add a quick launch"), wx.DefaultPosition)
+		self.browseBtn = bHelper1.addButton(self, wx.ID_ANY, _("&Browse..."), wx.DefaultPosition)
+		self.removeGestureBtn = bHelper1.addButton(self, wx.ID_ANY, _("&Remove this gesture"), wx.DefaultPosition)
+		self.addGestureBtn = bHelper1.addButton(self, wx.ID_ANY, _("&Add a quick launch"), wx.DefaultPosition)
 		self.browseBtn.Bind(wx.EVT_BUTTON, self.onBrowseBtn)
 		self.removeGestureBtn.Bind(wx.EVT_BUTTON, self.onRemoveGestureBtn)
 		self.addGestureBtn.Bind(wx.EVT_BUTTON, self.onAddGestureBtn)
