@@ -67,33 +67,97 @@ CHOICES_LABELS = {
 	CHOICE_bin: _("Binary"),
 }
 
+def _getUndefinedCharsCfg():
+	return config.conf["brailleExtender"]["undefinedCharsRepr"]
+
+
 def getHardValue() -> str:
-	"""Return the dot or sign pattern value for CHOICE_otherDots or CHOICE_otherSign."""
-	selected = config.conf["brailleExtender"]["undefinedCharsRepr"]["method"]
+	selected = _getUndefinedCharsCfg()["method"]
 	if selected == CHOICE_otherDots:
-		return config.conf["brailleExtender"]["undefinedCharsRepr"]["hardDotPatternValue"]
+		return _getUndefinedCharsCfg()["hardDotPatternValue"]
 	if selected == CHOICE_otherSign:
-		return config.conf["brailleExtender"]["undefinedCharsRepr"]["hardSignPatternValue"]
+		return _getUndefinedCharsCfg()["hardSignPatternValue"]
 	return ''
 
 
 _descCharCache = {}
 _undefinedSignCache = {}
 _brailledTagCache = {}
+_excludeDescSet: frozenset[int] = frozenset()
+_excludeDescRanges: tuple[tuple[int, int], ...] = ()
+_excludeDescConfigValue = ""
+
+
+def _parseCodepoint(s: str) -> int:
+	s = s.strip().lower()
+	if s.startswith("x"):
+		return int(s[1:] or "0", 16)
+	if s.startswith("d"):
+		return int(s[1:] or "0", 10)
+	return int(s, 10)
+
+
+def _parseExcludeDesc(s: str) -> tuple[frozenset[int], tuple[tuple[int, int], ...]]:
+	"""Parse exclude config into (codepoint_set, range_tuples) for O(1) single-char and O(k) range lookups."""
+	if not s or not s.strip():
+		return (frozenset(), ())
+	single: set[int] = set()
+	ranges: list[tuple[int, int]] = []
+	for part in s.split(","):
+		part = part.strip()
+		if not part:
+			continue
+		try:
+			if "-" in part:
+				a, b = part.split("-", 1)
+				start = _parseCodepoint(a.strip())
+				end = _parseCodepoint(b.strip())
+				if start <= end and 0 <= start <= 0x10FFFF and 0 <= end <= 0x10FFFF:
+					ranges.append((start, end))
+			elif len(part) > 1 and part.strip().lower()[0] in ("x", "d"):
+				cp = _parseCodepoint(part)
+				if 0 <= cp <= 0x10FFFF:
+					single.add(cp)
+			else:
+				for ch in part:
+					cp = ord(ch)
+					if 0 <= cp <= 0x10FFFF:
+						single.add(cp)
+		except (ValueError, TypeError):
+			log.debugWarning("Invalid exclude range: %r", part)
+	return (frozenset(single), tuple(ranges))
+
+
+def _getExcludeDesc() -> tuple[frozenset[int], tuple[tuple[int, int], ...]]:
+	global _excludeDescSet, _excludeDescRanges, _excludeDescConfigValue
+	val = _getUndefinedCharsCfg().get("excludeDescChars", "") or ""
+	if val != _excludeDescConfigValue:
+		_excludeDescConfigValue = val
+		_excludeDescSet, _excludeDescRanges = _parseExcludeDesc(val)
+	return _excludeDescSet, _excludeDescRanges
+
+
+def _isCharExcludedFromDesc(c: str) -> bool:
+	if len(c) != 1:
+		return False
+	excluded_set, excluded_ranges = _getExcludeDesc()
+	if not excluded_set and not excluded_ranges:
+		return False
+	cp = ord(c)
+	return cp in excluded_set or any(s <= cp <= e for s, e in excluded_ranges)
 
 
 def _clearCaches() -> None:
-	"""Invalidate all undefined-char caches. Call when settings change."""
-	global _descCharCache, _undefinedSignCache, _brailledTagCache
+	global _descCharCache, _undefinedSignCache, _brailledTagCache, _excludeDescConfigValue
 	_descCharCache.clear()
 	_undefinedSignCache.clear()
 	_brailledTagCache.clear()
+	_excludeDescConfigValue = ""
 
 
 def setUndefinedChar(t: Optional[int] = None) -> None:
-	"""Compile liblouis undefined-char rule for the current method."""
 	if not t or t > CHOICE_HUC6 or t < 0:
-		t = config.conf["brailleExtender"]["undefinedCharsRepr"]["method"]
+		t = _getUndefinedCharsCfg()["method"]
 	if t == 0:
 		return
 	_clearCaches()
@@ -102,7 +166,6 @@ def setUndefinedChar(t: Optional[int] = None) -> None:
 
 
 def getExtendedSymbolsForString(s: str, lang: str) -> dict[str, tuple[str, list[tuple[int, int]]]]:
-	"""Return symbols from rawText with their descriptions and positions."""
 	global extendedSymbols, localesFail
 	if lang in localesFail:
 		lang = "en"
@@ -123,11 +186,10 @@ def getExtendedSymbolsForString(s: str, lang: str) -> dict[str, tuple[str, list[
 
 
 def getAlternativeDescChar(c: str, method: int) -> str:
-	"""Return braille representation when characterProcessing has no description."""
-	if method in [CHOICE_HUC6, CHOICE_HUC8]:
+	if method in (CHOICE_HUC6, CHOICE_HUC8):
 		HUC6 = method == CHOICE_HUC6
 		return huc.translate(c, HUC6=HUC6)
-	if method in [CHOICE_bin, CHOICE_oct, CHOICE_dec, CHOICE_hex]:
+	if method in (CHOICE_bin, CHOICE_oct, CHOICE_dec, CHOICE_hex):
 		return getTextInBraille("".join(getUnicodeNotation(c)))
 	if method == CHOICE_liblouis:
 		return getTextInBraille(getLiblouisStyle(c))
@@ -137,47 +199,53 @@ def getAlternativeDescChar(c: str, method: int) -> str:
 _DESC_CACHE_MAX = 512
 
 
-def _getDescCharCore(c: str, lang: str, method: int) -> str:
-	"""Return description only (no tags). Cached for performance."""
+def _getDescCharCore(c: str, lang: str, method: int) -> tuple[str, bool]:
+	"""Return (text, use_tags). use_tags=False when using alternative repr (no prefix/suffix)."""
 	key = (c, lang, method)
 	if key in _descCharCache:
 		return _descCharCache[key]
+	if _isCharExcludedFromDesc(c):
+		desc = getAlternativeDescChar(c, method)
+		result = (desc, False)
+		if len(_descCharCache) >= _DESC_CACHE_MAX:
+			_descCharCache.pop(next(iter(_descCharCache)))
+		_descCharCache[key] = result
+		return result
 	level = get_symbol_level("SYMLVL_CHAR")
 	desc = characterProcessing.processSpeechSymbols(lang, c, level).strip()
+	use_tags = bool(desc and desc != c)
 	if not desc or desc == c:
 		if hasattr(characterProcessing, "SymbolLevel"):
 			allLevel = characterProcessing.SymbolLevel.ALL
 			if level != allLevel:
 				desc = characterProcessing.processSpeechSymbols(lang, c, allLevel).strip()
+				use_tags = bool(desc and desc != c)
 		if (not desc or desc == c) and len(c) == 1:
-			try:
-				desc = unicodedata.name(c)
-			except ValueError:
-				pass
+			if _getUndefinedCharsCfg().get("unicodeDataDescLastResort", False):
+				try:
+					desc = unicodedata.name(c)
+					use_tags = True
+				except ValueError:
+					pass
 		if not desc or desc == c:
 			desc = getAlternativeDescChar(c, method)
+			use_tags = False
+	result = (desc, use_tags)
 	if len(_descCharCache) >= _DESC_CACHE_MAX:
 		_descCharCache.pop(next(iter(_descCharCache)))
-	_descCharCache[key] = desc
-	return desc
+	_descCharCache[key] = result
+	return result
 
 
-def getDescChar(
-	c: str,
-	lang: str = "Windows",
-	start: str = "",
-	end: str = "",
-) -> str:
-	"""Return character description with optional braille tags. Uses NVDA symbol/CLDR when available."""
-	method = config.conf["brailleExtender"]["undefinedCharsRepr"]["method"]
+def getDescChar(c: str, lang: str = "Windows", start: str = "", end: str = "") -> str:
+	method = _getUndefinedCharsCfg()["method"]
 	if lang == "Windows":
 		lang = languageHandler.getLanguage()
-	desc = _getDescCharCore(c, lang, method)
-	return f"{start}{desc}{end}"
+	desc, use_tags = _getDescCharCore(c, lang, method)
+	return f"{start}{desc}{end}" if use_tags else desc
 
 
 def getLiblouisStyle(c: str | int) -> str:
-	"""Return Liblouis hex style (e.g. \\x1234) for a character or codepoint."""
 	if isinstance(c, str):
 		if not c:
 			raise ValueError("Empty string received")
@@ -194,11 +262,10 @@ def getLiblouisStyle(c: str | int) -> str:
 
 
 def getUnicodeNotation(s: str, notation: Optional[int] = None) -> str:
-	"""Return braille representation of Unicode notation (hex, dec, oct, bin, liblouis)."""
 	if not isinstance(s, str):
 		raise TypeError("wrong type")
 	if not notation:
-		notation = config.conf["brailleExtender"]["undefinedCharsRepr"]["method"]
+		notation = _getUndefinedCharsCfg()["method"]
 	matches = {
 		CHOICE_bin: bin,
 		CHOICE_oct: oct,
@@ -206,14 +273,13 @@ def getUnicodeNotation(s: str, notation: Optional[int] = None) -> str:
 		CHOICE_hex: hex,
 		CHOICE_liblouis: getLiblouisStyle,
 	}
-	if notation not in matches.keys():
+	if notation not in matches:
 		raise ValueError(f"Wrong value ({notation})")
 	fn = matches[notation]
 	return getTextInBraille("".join(["'%s'" % fn(ord(c)) for c in s]))
 
 
 def getUndefinedCharSign(method: int) -> str:
-	"""Return braille cell(s) for the undefined-character representation method."""
 	cached = _undefinedSignCache.get(method)
 	if cached is not None:
 		return cached
@@ -223,12 +289,11 @@ def getUndefinedCharSign(method: int) -> str:
 		r = '⠿'
 	elif method == CHOICE_otherDots:
 		r = huc.cellDescriptionsToUnicodeBraille(
-			config.conf["brailleExtender"]["undefinedCharsRepr"]["hardDotPatternValue"])
+			_getUndefinedCharsCfg()["hardDotPatternValue"])
 	elif method == CHOICE_questionMark:
 		r = getTextInBraille('?')
 	elif method == CHOICE_otherSign:
-		r = getTextInBraille(
-			config.conf["brailleExtender"]["undefinedCharsRepr"]["hardSignPatternValue"])
+		r = getTextInBraille(_getUndefinedCharsCfg()["hardSignPatternValue"])
 	else:
 		r = '⠀'
 	_undefinedSignCache[method] = r
@@ -243,12 +308,11 @@ def getReplacement(
 	lang: Optional[str] = None,
 	table: Optional[list[str]] = None,
 ) -> str:
-	"""Return braille representation for an undefined character or text span."""
 	if not method:
-		method = config.conf["brailleExtender"]["undefinedCharsRepr"]["method"]
+		method = _getUndefinedCharsCfg()["method"]
 	if not text:
 		return ''
-	cfg = config.conf["brailleExtender"]["undefinedCharsRepr"]
+	cfg = _getUndefinedCharsCfg()
 	if cfg["desc"]:
 		if startTag is None:
 			st, et = cfg["start"], cfg["end"]
@@ -261,17 +325,16 @@ def getReplacement(
 		return getTextInBraille(getDescChar(
 			text, lang=lang, start=startTag, end=endTag
 		), table)
-	if method in [CHOICE_HUC6, CHOICE_HUC8]:
+	if method in (CHOICE_HUC6, CHOICE_HUC8):
 		HUC6 = method == CHOICE_HUC6
 		return huc.translate(text, HUC6=HUC6)
-	if method in [CHOICE_bin, CHOICE_oct, CHOICE_dec, CHOICE_hex, CHOICE_liblouis]:
+	if method in (CHOICE_bin, CHOICE_oct, CHOICE_dec, CHOICE_hex, CHOICE_liblouis):
 		return getUnicodeNotation(text)
 	return getUndefinedCharSign(method)
 
 
 def undefinedCharProcess(self: Any) -> None:
-	"""Replace undefined braille cells with configured representation (HUC, desc, etc.)."""
-	cfg = config.conf["brailleExtender"]["undefinedCharsRepr"]
+	cfg = _getUndefinedCharsCfg()
 	undefinedCharsPos = list(regionhelper.findBrailleCellsPattern(
 		self, undefinedCharPattern))
 	if not undefinedCharsPos:
@@ -307,41 +370,48 @@ def undefinedCharProcess(self: Any) -> None:
 			self.rawText[pos], **getReplKw)))
 	if cfg["desc"] and cfg["extendedDesc"]:
 		extendedSymbolsRawText = getExtendedSymbolsForString(self.rawText, lang)
+		excluded_set, excluded_ranges = _getExcludeDesc()
 		for c, v in extendedSymbolsRawText.items():
 			desc, positions = v[0], v[1]
-			toAdd = f":{len(c)}" if showSize and len(c) > 1 else ''
-			replaceByBraille = getTextInBraille(
-				f"{startTag}{desc}{toAdd}{endTag}", table)
+			excluded = any(
+				ord(ch) in excluded_set or any(s <= ord(ch) <= e for s, e in excluded_ranges)
+				for ch in c
+			)
+			if excluded:
+				replaceByBraille = getReplacement(c[0], **getReplKw)
+			else:
+				toAdd = f":{len(c)}" if showSize and len(c) > 1 else ''
+				replaceByBraille = getTextInBraille(
+					f"{startTag}{desc}{toAdd}{endTag}", table)
+			replForFullDesc = replaceByBraille if (fullExtendedDesc and excluded) else (
+				getReplacement(c[0], **getReplKw) if fullExtendedDesc else None
+			)
 			for start, end in positions:
 				if start in undefinedCharsPosSet:
 					replacements.append(Repl(
 						start,
 						start if fullExtendedDesc else end,
-						replaceBy=getReplacement(c[0], **getReplKw) if fullExtendedDesc else replaceByBraille,
+						replaceBy=replForFullDesc if fullExtendedDesc else replaceByBraille,
 						insertBefore=replaceByBraille if fullExtendedDesc else ''
 					))
 	regionhelper.replaceBrailleCells(self, replacements)
 
 
 class SettingsDlg(gui.settingsDialogs.SettingsPanel):
-	"""Settings panel for undefined character representation options."""
-
-	# Translators: title of a dialog.
+	# Translators: title of dialog
 	title = _("Undefined character representation")
 
 	def makeSettings(self, settingsSizer: wx.Sizer) -> None:
 		sHelper = gui.guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
-		# Translators: label of a dialog.
+		cfg = _getUndefinedCharsCfg()
+		# Translators: label of dialog
 		label = _("Representation &method:")
 		self.undefinedCharReprList = sHelper.addLabeledControl(
 			label, wx.Choice, choices=list(CHOICES_LABELS.values())
 		)
-		self.undefinedCharReprList.SetSelection(
-			config.conf["brailleExtender"]["undefinedCharsRepr"]["method"]
-		)
-		self.undefinedCharReprList.Bind(
-			wx.EVT_CHOICE, self.onUndefinedCharReprList)
-		# Translators: label of a dialog.
+		self.undefinedCharReprList.SetSelection(cfg["method"])
+		self.undefinedCharReprList.Bind(wx.EVT_CHOICE, self.onUndefinedCharReprList)
+		# Translators: label of dialog
 		self.undefinedCharReprEdit = sHelper.addLabeledControl(
 			_("Specify another &pattern"), wx.TextCtrl, value=self.getHardValue()
 		)
@@ -350,19 +420,27 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 				_("Show punctuation/symbol &name for undefined characters if available (can cause a lag)")
 			))
 		)
-		self.undefinedCharDesc.SetValue(
-			config.conf["brailleExtender"]["undefinedCharsRepr"]["desc"]
-		)
+		self.undefinedCharDesc.SetValue(cfg["desc"])
 		self.undefinedCharDesc.Bind(wx.EVT_CHECKBOX, self.onUndefinedCharDesc)
+		# Translators: label for checkbox
+		self.unicodeDataDescLastResort = sHelper.addItem(
+			wx.CheckBox(self, label=_("Use Unicode character name at last resort (when no other description is available)"))
+		)
+		self.unicodeDataDescLastResort.SetValue(cfg.get("unicodeDataDescLastResort", False))
+		# Translators: label for text field (format: x=hex, d=decimal, or direct chars)
+		excludeLabel = _("E&xclude characters from description (x=hex, d=decimal, or direct characters, comma-separated):") + " e.g.: x00-x1f, xfffc, +"
+		self.excludeDescChars = sHelper.addLabeledControl(
+			excludeLabel,
+			wx.TextCtrl,
+			value=cfg.get("excludeDescChars", ""),
+		)
 		self.extendedDesc = sHelper.addItem(
 			wx.CheckBox(
 				self,
 				label=_("Also describe e&xtended characters (e.g.: country flags)")
 			)
 		)
-		self.extendedDesc.SetValue(
-			config.conf["brailleExtender"]["undefinedCharsRepr"]["extendedDesc"]
-		)
+		self.extendedDesc.SetValue(cfg["extendedDesc"])
 		self.extendedDesc.Bind(wx.EVT_CHECKBOX, self.onExtendedDesc)
 		self.fullExtendedDesc = sHelper.addItem(
 			wx.CheckBox(
@@ -370,64 +448,53 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 				label=_("&Full extended description")
 			)
 		)
-		self.fullExtendedDesc.SetValue(
-			config.conf["brailleExtender"]["undefinedCharsRepr"]["fullExtendedDesc"]
-		)
+		self.fullExtendedDesc.SetValue(cfg["fullExtendedDesc"])
 		self.showSize = sHelper.addItem(
 			wx.CheckBox(
 				self,
 				label=_("Show the si&ze taken")
 			)
 		)
-		self.showSize.SetValue(
-			config.conf["brailleExtender"]["undefinedCharsRepr"]["showSize"]
-		)
+		self.showSize.SetValue(cfg["showSize"])
 		self.startTag = sHelper.addLabeledControl(
-			_("&Start tag:"),
-			wx.TextCtrl,
-			value=config.conf["brailleExtender"]["undefinedCharsRepr"]["start"],
+			_("&Start tag:"), wx.TextCtrl, value=cfg["start"],
 		)
 		self.endTag = sHelper.addLabeledControl(
-			_("&End tag:"),
-			wx.TextCtrl,
-			value=config.conf["brailleExtender"]["undefinedCharsRepr"]["end"],
+			_("&End tag:"), wx.TextCtrl, value=cfg["end"],
 		)
 		availableLangs = languageHandler.getAvailableLanguages()
 		self._langValues = [lang[1] for lang in availableLangs]
 		self._langKeys = [lang[0] for lang in availableLangs]
-		undefinedCharLang = config.conf["brailleExtender"]["undefinedCharsRepr"]["lang"]
+		undefinedCharLang = cfg["lang"]
 		if undefinedCharLang not in self._langKeys:
-			undefinedCharLang = keys[-1]
+			undefinedCharLang = self._langKeys[-1]
 		undefinedCharLangID = self._langKeys.index(undefinedCharLang)
 		self.undefinedCharLang = sHelper.addLabeledControl(
 			_("&Language:"), wx.Choice, choices=self._langValues
 		)
 		self.undefinedCharLang.SetSelection(undefinedCharLangID)
+		tableKeys = ["current"] + [
+			t.fileName for t in addoncfg.tables if t.output
+		]
 		values = [_("Use the current output table")] + [
-			table.displayName for table in addoncfg.tables if table.output
+			t.displayName for t in addoncfg.tables if t.output
 		]
-		keys = ["current"] + [
-			table.fileName for table in addoncfg.tables if table.output
-		]
-		undefinedCharTable = config.conf["brailleExtender"]["undefinedCharsRepr"][
-			"table"
-		]
+		undefinedCharTable = cfg["table"]
 		if undefinedCharTable not in addoncfg.tablesFN + ["current"]:
 			undefinedCharTable = "current"
-		undefinedCharTableID = keys.index(undefinedCharTable)
+		undefinedCharTableID = tableKeys.index(undefinedCharTable)
 		self.undefinedCharTable = sHelper.addLabeledControl(
 			_("Braille &table:"), wx.Choice, choices=values
 		)
 		self.undefinedCharTable.SetSelection(undefinedCharTableID)
-
-		# Translators: label of a dialog.
+		# Translators: label of dialog
 		label = _("Character limit at which descriptions are disabled (to avoid freezes, >):")
 		self.characterLimit = sHelper.addLabeledControl(
 			label,
 			gui.nvdaControls.SelectOnFocusSpinCtrl,
 			min=0,
 			max=1000000,
-			initial=config.conf["brailleExtender"]["undefinedCharsRepr"]["characterLimit"]
+			initial=cfg["characterLimit"]
 		)
 
 		self.onExtendedDesc()
@@ -435,20 +502,17 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		self.onUndefinedCharReprList()
 
 	def getHardValue(self) -> str:
-		"""Return current dot/sign pattern for the pattern editor."""
 		selected = self.undefinedCharReprList.GetSelection()
 		if selected == CHOICE_otherDots:
-			return config.conf["brailleExtender"]["undefinedCharsRepr"][
-				"hardDotPatternValue"
-			]
+			return _getUndefinedCharsCfg()["hardDotPatternValue"]
 		if selected == CHOICE_otherSign:
-			return config.conf["brailleExtender"]["undefinedCharsRepr"][
-				"hardSignPatternValue"
-			]
+			return _getUndefinedCharsCfg()["hardSignPatternValue"]
 		return ""
 
 	def onUndefinedCharDesc(self, evt: Optional[wx.CommandEvent] = None, forceDisable: bool = False) -> None:
 		l = [
+			self.unicodeDataDescLastResort,
+			self.excludeDescChars,
 			self.extendedDesc,
 			self.fullExtendedDesc,
 			self.showSize,
@@ -479,7 +543,7 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		else:
 			self.undefinedCharDesc.Enable()
 			self.onUndefinedCharDesc()
-		if selected in [CHOICE_otherDots, CHOICE_otherSign]:
+		if selected in (CHOICE_otherDots, CHOICE_otherSign):
 			self.undefinedCharReprEdit.Enable()
 		else:
 			self.undefinedCharReprEdit.Disable()
@@ -490,45 +554,30 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 
 	def onSave(self) -> None:
 		_clearCaches()
-		config.conf["brailleExtender"]["undefinedCharsRepr"][
-			"method"
-		] = self.undefinedCharReprList.GetSelection()
+		cfg = _getUndefinedCharsCfg()
+		cfg["method"] = self.undefinedCharReprList.GetSelection()
 		repr_ = self.undefinedCharReprEdit.Value
 		if self.undefinedCharReprList.GetSelection() == CHOICE_otherDots:
 			repr_ = re.sub(r"[^0-8\-]", "", repr_).strip("-")
 			repr_ = re.sub(r"\-+", "-", repr_)
-			config.conf["brailleExtender"]["undefinedCharsRepr"][
-				"hardDotPatternValue"
-			] = repr_
+			cfg["hardDotPatternValue"] = repr_
 		else:
-			config.conf["brailleExtender"]["undefinedCharsRepr"][
-				"hardSignPatternValue"
-			] = repr_
-		config.conf["brailleExtender"]["undefinedCharsRepr"]["desc"] = self.undefinedCharDesc.IsChecked()
-		config.conf["brailleExtender"]["undefinedCharsRepr"]["extendedDesc"] = self.extendedDesc.IsChecked()
-		config.conf["brailleExtender"]["undefinedCharsRepr"]["fullExtendedDesc"] = self.fullExtendedDesc.IsChecked()
-		config.conf["brailleExtender"]["undefinedCharsRepr"]["showSize"] = self.showSize.IsChecked()
-		config.conf["brailleExtender"]["undefinedCharsRepr"][
-			"start"
-		] = self.startTag.Value
-		config.conf["brailleExtender"]["undefinedCharsRepr"][
-			"end"
-		] = self.endTag.Value
-		config.conf["brailleExtender"]["undefinedCharsRepr"]["lang"] = self._langKeys[
-			self.undefinedCharLang.GetSelection()
-		]
-		undefinedCharTable = self.undefinedCharTable.GetSelection()
-		keys = ["current"] + [
-			table.fileName for table in addoncfg.tables if table.output
-		]
-		config.conf["brailleExtender"]["undefinedCharsRepr"]["table"] = keys[
-			undefinedCharTable
-		]
-		config.conf["brailleExtender"]["undefinedCharsRepr"]["characterLimit"] = self.characterLimit.Value
+			cfg["hardSignPatternValue"] = repr_
+		cfg["desc"] = self.undefinedCharDesc.IsChecked()
+		cfg["extendedDesc"] = self.extendedDesc.IsChecked()
+		cfg["fullExtendedDesc"] = self.fullExtendedDesc.IsChecked()
+		cfg["showSize"] = self.showSize.IsChecked()
+		cfg["unicodeDataDescLastResort"] = self.unicodeDataDescLastResort.IsChecked()
+		cfg["excludeDescChars"] = self.excludeDescChars.Value.strip()
+		cfg["start"] = self.startTag.Value
+		cfg["end"] = self.endTag.Value
+		cfg["lang"] = self._langKeys[self.undefinedCharLang.GetSelection()]
+		tableKeys = ["current"] + [t.fileName for t in addoncfg.tables if t.output]
+		cfg["table"] = tableKeys[self.undefinedCharTable.GetSelection()]
+		cfg["characterLimit"] = self.characterLimit.Value
 
 
 def _shouldIncludeExtendedSymbol(k: str, v: Any) -> bool:
-	"""Return True for multi-char symbols (e.g. flags) or single-char emoji (U+1F300+)."""
 	if not k or not v or not getattr(v, 'replacement', None):
 		return False
 	try:
@@ -545,7 +594,6 @@ def _shouldIncludeExtendedSymbol(k: str, v: Any) -> bool:
 
 
 def getExtendedSymbols(locale: str) -> dict[str, str]:
-	"""Load extended symbol descriptions (emoji, flags) from NVDA characterProcessing."""
 	if locale == "Windows":
 		locale = languageHandler.getLanguage()
 	try:

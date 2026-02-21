@@ -159,6 +159,8 @@ def getConfspec():
 			"extendedDesc": "boolean(default=True)",
 			"fullExtendedDesc": "boolean(default=False)",
 			"showSize": "boolean(default=True)",
+			"unicodeDataDescLastResort": "boolean(default=False)",
+			"excludeDescChars": "string(default='')",
 			"start": "string(default=[)",
 			"end": "string(default=])",
 			"lang": "string(default=Windows)",
