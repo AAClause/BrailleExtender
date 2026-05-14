@@ -293,6 +293,135 @@ class BrailleTablesDlg(gui.settingsDialogs.SettingsPanel):
 			)
 			if res == wx.YES: core.restart()
 
+class RotorDlg(gui.settingsDialogs.SettingsPanel):
+
+	# Translators: title of a dialog.
+	title = _("Rotor")
+	# Translators: Shown as the short description for this category in Braille Extender settings.
+	panelDescription = _("Configure which items appear in the rotor and in what order.")
+
+	def makeSettings(self, settingsSizer):
+		from . import rotor
+		sHelper = gui.guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
+		self._ids = list(rotor.master_order_from_config())
+		self._normalize_default_first_ids()
+		enabled = rotor.enabled_ids_from_config()
+		labels = [rotor.ROTOR_LABELS[i] for i in self._ids]
+		self.rotorList = sHelper.addLabeledControl(
+			_("Rotor &items (checked entries are included when you cycle the rotor):"),
+			gui.nvdaControls.CustomCheckListBox,
+			choices=labels,
+		)
+		for i, oid in enumerate(self._ids):
+			if oid in enabled:
+				self.rotorList.Check(i)
+		self.rotorList.Check(0)
+		self.rotorList.Bind(wx.EVT_CHECKLISTBOX, self._on_rotor_item_checked)
+		bMove = gui.guiHelper.ButtonHelper(orientation=wx.HORIZONTAL)
+		self.moveBeforeBtn = bMove.addButton(self, label=_("Move &before"))
+		self.moveBeforeBtn.Bind(wx.EVT_BUTTON, self.onMoveBefore)
+		self.moveAfterBtn = bMove.addButton(self, label=_("Move &after"))
+		self.moveAfterBtn.Bind(wx.EVT_BUTTON, self.onMoveAfter)
+		sHelper.addItem(bMove)
+
+	def postInit(self):
+		self.rotorList.SetFocus()
+		if self.rotorList.GetCount() > 0:
+			self.rotorList.SetSelection(0)
+
+	def _normalize_default_first_ids(self):
+		from . import rotor
+		dv = rotor.RotorId.default.value
+		if dv not in self._ids:
+			return
+		if self._ids[0] == dv:
+			return
+		self._ids = [dv] + [x for x in self._ids if x != dv]
+
+	def _on_rotor_item_checked(self, evt: wx.CommandEvent):
+		from . import rotor
+		evt.Skip()
+		ix = evt.GetSelection()
+		dv = rotor.RotorId.default.value
+		if 0 <= ix < len(self._ids) and self._ids[ix] == dv and not self.rotorList.IsChecked(ix):
+			self.rotorList.Check(ix)
+
+	def _refresh_list_preserving_checks(self):
+		from . import rotor
+		dv = rotor.RotorId.default.value
+		checks = {self._ids[i]: self.rotorList.IsChecked(i) for i in range(len(self._ids))}
+		checks[dv] = True
+		self._normalize_default_first_ids()
+		labels = [rotor.ROTOR_LABELS[i] for i in self._ids]
+		self.rotorList.SetItems(labels)
+		for i, oid in enumerate(self._ids):
+			if checks.get(oid):
+				self.rotorList.Check(i)
+		self.rotorList.Check(0)
+
+	def _checked_row_indices(self):
+		return [i for i in range(self.rotorList.GetCount()) if self.rotorList.IsChecked(i)]
+
+	def _prev_checked_index(self, i: int):
+		chk = self._checked_row_indices()
+		if i not in chk:
+			return None
+		pos = chk.index(i)
+		if pos == 0:
+			return None
+		return chk[pos - 1]
+
+	def _next_checked_index(self, i: int):
+		chk = self._checked_row_indices()
+		if i not in chk:
+			return None
+		pos = chk.index(i)
+		if pos >= len(chk) - 1:
+			return None
+		return chk[pos + 1]
+
+	def onMoveBefore(self, evt):
+		from . import rotor
+		dv = rotor.RotorId.default.value
+		i = self.rotorList.GetSelection()
+		prev = self._prev_checked_index(i)
+		if prev is None:
+			return
+		if self._ids[prev] == dv:
+			return
+		moved = self._ids[i]
+		self._ids[i], self._ids[prev] = self._ids[prev], self._ids[i]
+		self._refresh_list_preserving_checks()
+		self.rotorList.SetSelection(self._ids.index(moved))
+
+	def onMoveAfter(self, evt):
+		from . import rotor
+		dv = rotor.RotorId.default.value
+		i = self.rotorList.GetSelection()
+		if self._ids[i] == dv:
+			return
+		nxt = self._next_checked_index(i)
+		if nxt is None:
+			return
+		moved = self._ids[i]
+		self._ids[i], self._ids[nxt] = self._ids[nxt], self._ids[i]
+		self._refresh_list_preserving_checks()
+		self.rotorList.SetSelection(self._ids.index(moved))
+
+	def onSave(self):
+		from . import rotor
+		self._refresh_list_preserving_checks()
+		order_str, enabled_str = rotor.format_config_order_and_enabled(
+			self._ids,
+			[self.rotorList.IsChecked(i) for i in range(len(self._ids))],
+		)
+		config.conf["brailleExtender"]["rotor"]["itemOrder"] = order_str
+		config.conf["brailleExtender"]["rotor"]["itemEnabled"] = enabled_str
+		rotor.reload_from_config()
+		if instanceGP is not None:
+			rotor.clamp_rotor_index()
+			instanceGP.bindRotorGES()
+
 class QuickLaunchesDlg(gui.settingsDialogs.SettingsDialog):
 
 	# Translators: title of a dialog.
@@ -461,6 +590,7 @@ class AdvancedDlg(gui.settingsDialogs.SettingsPanel):
 class AddonSettingsDialog(gui.settingsDialogs.MultiCategorySettingsDialog):
 	categoryClasses=[
 		GeneralDlg,
+		RotorDlg,
 		AutoScrollDlg,
 		SpeechHistorymodeDlg,
 		DocumentFormattingDlg,

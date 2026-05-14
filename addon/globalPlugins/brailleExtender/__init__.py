@@ -35,6 +35,7 @@ from logHandler import log
 from . import addoncfg
 config.conf.spec["brailleExtender"] = addoncfg.getConfspec()
 from . import patches
+from . import rotor
 from . import advancedinput
 from . import huc
 from . import documentformatting
@@ -82,46 +83,8 @@ def _restoreMainBuffer():
 def _popupSettingsDialog(*args, **kwargs):
 	return getattr(gui.mainFrame, 'popupSettingsDialog', gui.mainFrame._popupSettingsDialog)(*args, **kwargs)
 
-rotorItems = [
-	("default", _("Default")),
-	("moveInText", _("Moving in the text")),
-	("textSelection", _("Text selection")),
-	("object", _("Objects")),
-	("review", _("Review")),
-	("Link", _("Links")),
-	("UnvisitedLink", _("Unvisited links")),
-	("VisitedLink", _("Visited links")),
-	("Landmark", _("Landmarks")),
-	("Heading", _("Headings")),
-	("Heading1", _("Level 1 headings")),
-	("Heading2", _("Level 2 headings")),
-	("Heading3", _("Level 3 headings")),
-	("Heading4", _("Level 4 headings")),
-	("Heading5", _("Level 5 headings")),
-	("Heading6", _("Level 6 headings")),
-	("List", _("Lists")),
-	("ListItem", _("List items")),
-	("Graphic", _("Graphics")),
-	("BlockQuote", _("Block quotes")),
-	("Button", _("Buttons")),
-	("FormField", _("Form fields")),
-	("Edit", _("Edit fields")),
-	("RadioButton", _("Radio buttons")),
-	("ComboBox", _("Combo boxes")),
-	("CheckBox", _("Check boxes")),
-	("NotLinkBlock", _("Non-link blocks")),
-	("Frame", _("Frames")),
-	("Separator", _("Separators")),
-	("EmbeddedObject", _("Embedded objects")),
-	("Annotation", _("Annotations")),
-	("Error", _("Spelling errors")),
-	("Table", _("Tables")),
-	("moveInTable", _("Move in table")),
-]
-rotorItem = 0
+# Step size for move-in-text / text-selection rotor modes (character, word, line, …)
 rotorRange = 0
-lastRotorItemInVD = 0
-lastRotorItemInVDSaved = True
 HLP_browseModeInfo = ". %s" % _("If pressed twice, presents the information in browse mode")
 
 # Freedom Scientific wiz wheel lines: do not remap (NVDA core scroll gestures).
@@ -180,6 +143,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		self.reloadBrailleTables()
 		settings.instanceGP = self
 		addoncfg.loadConf()
+		rotor.reload_from_config()
 		addoncfg.initGestures()
 		addoncfg.loadGestures()
 		self.gesturesInit()
@@ -205,17 +169,8 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		log.info(f"{addonName} {addonVersion} loaded ({round(time.time()-startTime, 2)}s)")
 
 	def event_gainFocus(self, obj, nextHandler):
-		global rotorItem, lastRotorItemInVD, lastRotorItemInVDSaved
 		isVirtualBuff = obj is not None and isinstance(obj.treeInterceptor, virtualBuffers.VirtualBuffer)
-		if lastRotorItemInVDSaved and isVirtualBuff:
-			rotorItem = lastRotorItemInVD
-			self.bindRotorGES()
-			lastRotorItemInVDSaved = False
-		elif not lastRotorItemInVDSaved and not isVirtualBuff:
-			lastRotorItemInVD = rotorItem
-			lastRotorItemInVDSaved = True
-			rotorItem = 0
-			self.bindRotorGES()
+		rotor.apply_focus_context(isVirtualBuff, self)
 
 		if "tabSize_%s" % addoncfg.curBD not in config.conf["brailleExtender"].copy().keys(): self.onReload(None, 1)
 		if self.hourDatePlayed: self.script_hourDate(None)
@@ -395,8 +350,10 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		for k in self.rotorGES:
 			try: self.removeGestureBinding(k)
 			except BaseException: pass
-		if rotorItems[rotorItem][0] == "default": return
-		if rotorItems[rotorItem][0] in ["object", "review", "textSelection", "moveInText", "moveInTable"]:
+		rid = rotor.current_rotor_id()
+		if rid == rotor.RotorId.default:
+			return
+		if rotor.should_bind_full_rotor_gestures(rid):
 			self.bindGestures(self.rotorGES)
 		else:
 			for k in self.rotorGES:
@@ -405,20 +362,15 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	@script(description=_("Braille Extender: select the previous rotor category (links, headings, review, and so on)"))
 	def script_priorRotor(self, gesture):
-		global rotorItem
-		if rotorItem > 0:
-			rotorItem -= 1
-		else:
-			rotorItem = len(rotorItems) - 1
+		msg = rotor.advance_rotor(-1)
 		self.bindRotorGES()
-		return ui.message(rotorItems[rotorItem][1])
+		return ui.message(msg)
 
 	@script(description=_("Braille Extender: select the next rotor category"))
 	def script_nextRotor(self, gesture):
-		global rotorItem
-		rotorItem = 0 if rotorItem >= len(rotorItems) - 1 else rotorItem + 1
+		msg = rotor.advance_rotor(1)
 		self.bindRotorGES()
-		return ui.message(rotorItems[rotorItem][1])
+		return ui.message(msg)
 
 	@staticmethod
 	def getCurrentSelectionRange(pretty=True, back=False):
@@ -438,7 +390,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			('control+uparrow', 'control+downarrow'),
 			('pageup', 'pagedown'),
 			('control+home', 'control+end')]
-		if rotorItems[rotorItem][0] == "textSelection":
+		if rotor.current_rotor_id() == rotor.RotorId.textSelection:
 			return "shift+%s" % (keys[rotorRange][0] if back else keys[rotorRange][1])
 		return keys[rotorRange][0] if back else keys[rotorRange][1]
 
@@ -450,85 +402,99 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	@staticmethod
 	def moveTo(direction, gesture = None):
-		global rotorItem
 		obj = api.getFocusObject()
-		if obj.treeInterceptor is not None:
-			func = getattr(obj.treeInterceptor, "script_%s%s" % (direction, rotorItems[rotorItem][0]), None)
-			if func: return func(gesture)
-		ui.message(_("Not available here"))
+		if obj is None:
+			return ui.message(_("Not available here"))
+		ti = rotor.resolve_document_tree_interceptor(obj)
+		if ti is None:
+			return ui.message(_("Not available here"))
+		func = getattr(
+			ti,
+			rotor.browse_mode_script_attr(direction, rotor.current_rotor_id()),
+			None,
+		)
+		if func:
+			return func(gesture)
+		return ui.message(_("Not available here"))
 
 	@script(description=_("Braille Extender rotor: move forward (next character, link, review line, and so on, depending on the rotor)"))
 	def script_nextEltRotor(self, gesture):
-		if rotorItems[rotorItem][0] == "default": return self.sendComb('rightarrow', gesture)
-		if rotorItems[rotorItem][0] in ["moveInText", "textSelection"]:
+		rid = rotor.current_rotor_id()
+		if rid == rotor.RotorId.default:
+			return self.sendComb('rightarrow', gesture)
+		if rid in (rotor.RotorId.moveInText, rotor.RotorId.textSelection):
 			return self.sendComb(self.getCurrentSelectionRange(False), gesture)
-		if rotorItems[rotorItem][0] == "object":
+		if rid == rotor.RotorId.object:
 			self.sendComb('nvda+shift+rightarrow', gesture)
-		elif rotorItems[rotorItem][0] == "review":
+		elif rid == rotor.RotorId.review:
 			scriptHandler.executeScript(
 				globalCommands.commands.script_braille_scrollForward, gesture)
-		elif rotorItems[rotorItem][0] == "moveInTable":
+		elif rid == rotor.RotorId.moveInTable:
 			self.sendComb('control+alt+rightarrow', gesture)
-		elif rotorItems[rotorItem][0] == "spellingErrors":
-			obj = api.getFocusObject()
-			if obj.treeInterceptor is not None:
-				obj.treeInterceptor.script_nextError(gesture)
-			else:
-				ui.message(_("Not supported here or not in browse mode"))
-		else: return self.moveTo("next", gesture)
+		elif rid == rotor.RotorId.Error:
+			return self.moveTo("next", gesture)
+		elif rid == rotor.RotorId.prefInputTable:
+			return self._cyclePreferredInputTable(1)
+		elif rid == rotor.RotorId.prefOutputTable:
+			return self._cyclePreferredOutputTable(1)
+		else:
+			return self.moveTo("next", gesture)
 
 	@script(description=_("Braille Extender rotor: move backward (previous character, link, review line, and so on)"))
 	def script_priorEltRotor(self, gesture):
-		if rotorItems[rotorItem][0] == "default":
+		rid = rotor.current_rotor_id()
+		if rid == rotor.RotorId.default:
 			return self.sendComb('leftarrow', gesture)
-		if rotorItems[rotorItem][0] in ["moveInText", "textSelection"]:
+		if rid in (rotor.RotorId.moveInText, rotor.RotorId.textSelection):
 			return self.sendComb(self.getCurrentSelectionRange(False, True), gesture)
-		if rotorItems[rotorItem][0] == "object":
+		if rid == rotor.RotorId.object:
 			return self.sendComb("nvda+shift+leftarrow", gesture)
-		if rotorItems[rotorItem][0] == "review":
+		if rid == rotor.RotorId.review:
 			return scriptHandler.executeScript(
 				globalCommands.commands.script_braille_scrollBack, gesture)
-		if rotorItems[rotorItem][0] == "moveInTable":
+		if rid == rotor.RotorId.moveInTable:
 			return self.sendComb('control+alt+leftarrow', gesture)
-		if rotorItems[rotorItem][0] == "spellingErrors":
-			obj = api.getFocusObject()
-			if obj.treeInterceptor is not None:
-				obj.treeInterceptor.script_previousError(gesture)
-			else:
-				ui.message(_("Not supported here or not in browse mode"))
-		else: return self.moveTo("previous", gesture)
+		if rid == rotor.RotorId.Error:
+			return self.moveTo("previous", gesture)
+		if rid == rotor.RotorId.prefInputTable:
+			return self._cyclePreferredInputTable(-1)
+		if rid == rotor.RotorId.prefOutputTable:
+			return self._cyclePreferredOutputTable(-1)
+		return self.moveTo("previous", gesture)
 
 	@script(description=_("Braille Extender rotor: next step (next line, next object group, larger selection unit, depending on the rotor)"))
 	def script_nextSetRotor(self, gesture):
-		if rotorItems[rotorItem][0] in ["moveInText", "textSelection"]:
+		rid = rotor.current_rotor_id()
+		if rid in (rotor.RotorId.moveInText, rotor.RotorId.textSelection):
 			return self.switchSelectionRange()
-		if rotorItems[rotorItem][0] == "object":
+		if rid == rotor.RotorId.object:
 			self.sendComb('nvda+shift+downarrow', gesture)
-		elif rotorItems[rotorItem][0] == "review":
+		elif rid == rotor.RotorId.review:
 			scriptHandler.executeScript(
 				globalCommands.commands.script_braille_nextLine, gesture)
-		elif rotorItems[rotorItem][0] == "moveInTable":
+		elif rid == rotor.RotorId.moveInTable:
 			self.sendComb('control+alt+downarrow', gesture)
 		else:
 			return self.sendComb('downarrow', gesture)
 
 	@script(description=_("Braille Extender rotor: previous step (previous line, object group, or selection unit)"))
 	def script_priorSetRotor(self, gesture):
-		if rotorItems[rotorItem][0] in ["moveInText", "textSelection"]:
+		rid = rotor.current_rotor_id()
+		if rid in (rotor.RotorId.moveInText, rotor.RotorId.textSelection):
 			self.switchSelectionRange(True)
-		elif rotorItems[rotorItem][0] == "object":
+		elif rid == rotor.RotorId.object:
 			self.sendComb('nvda+shift+uparrow', gesture)
-		elif rotorItems[rotorItem][0] == "review":
+		elif rid == rotor.RotorId.review:
 			scriptHandler.executeScript(
 				globalCommands.commands.script_braille_previousLine, gesture)
-		elif rotorItems[rotorItem][0] == "moveInTable":
+		elif rid == rotor.RotorId.moveInTable:
 			self.sendComb('control+alt+uparrow', gesture)
 		else:
 			self.sendComb('uparrow', gesture)
 
 	@script(description=_("Braille Extender rotor: activate the item (press Enter or the rotor’s default action)"))
 	def script_selectElt(self, gesture):
-		if rotorItems[rotorItem][0] == "object":
+		if rotor.current_rotor_id() == rotor.RotorId.object:
 			self.sendComb('NVDA+enter', gesture)
 		self.sendComb('enter', gesture)
 
@@ -846,6 +812,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		gesture="kb:shift+NVDA+i",
 	)
 	def script_switchInputBrailleTable(self, gesture):
+		return self._cyclePreferredInputTable(1)
+
+	def _cyclePreferredInputTable(self, delta: int):
 		if addoncfg.noUnicodeTable:
 			return ui.message(_("NVDA 2017.3 or later is required to use this feature"))
 		addoncfg.loadPreferedTables()
@@ -856,7 +825,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			tid = addoncfg.inputTables.index(activeInput)
 		except ValueError:
 			tid = -1
-		nID = (tid + 1) % len(addoncfg.inputTables)
+		nID = (tid + delta) % len(addoncfg.inputTables)
 		nextTable = addoncfg.inputTables[nID]
 		if nextTable == "auto":
 			config.conf["braille"]["inputTable"] = "auto"
@@ -882,6 +851,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		gesture="kb:shift+NVDA+u",
 	)
 	def script_switchOutputBrailleTable(self, gesture):
+		return self._cyclePreferredOutputTable(1)
+
+	def _cyclePreferredOutputTable(self, delta: int):
 		if addoncfg.noUnicodeTable:
 			return ui.message(_("NVDA 2017.3 or later is required to use this feature"))
 		addoncfg.loadPreferedTables()
@@ -892,7 +864,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			tid = addoncfg.outputTables.index(activeOutput)
 		except ValueError:
 			tid = -1
-		nID = (tid + 1) % len(addoncfg.outputTables)
+		nID = (tid + delta) % len(addoncfg.outputTables)
 		nextTable = addoncfg.outputTables[nID]
 		if nextTable == "auto":
 			config.conf["braille"]["translationTable"] = "auto"
@@ -964,6 +936,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		addoncfg.quickLaunches = OrderedDict()
 		config.conf.spec["brailleExtender"] = addoncfg.getConfspec()
 		addoncfg.loadConf()
+		rotor.reload_from_config()
 		addoncfg.initGestures()
 		addoncfg.loadGestures()
 		self.gesturesInit()
