@@ -45,7 +45,8 @@ from . import undefinedchars
 from . import updatecheck
 from . import utils
 from .common import (addonName, addonURL, addonVersion, punctuationSeparator,
-	RC_NORMAL, RC_EMULATE_ARROWS_BEEP, RC_EMULATE_ARROWS_SILENT)
+	RC_NORMAL, RC_EMULATE_ARROWS_BEEP, RC_EMULATE_ARROWS_SILENT,
+	default_braille_table_file_for_cur_language)
 
 addonHandler.initTranslation()
 
@@ -793,9 +794,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			config.conf["braille"]["inputTable"] = "auto"
 			# Bypass handler's table setter to avoid it overwriting config with table.fileName
 			brailleInput.handler._table = brailleTables.getTable(
-				brailleTables.getDefaultTableForCurLang(brailleTables.TableType.INPUT)
+				default_braille_table_file_for_cur_language(is_input=True)
 			)
-			msg = utils.getAutomaticTableDisplayName(brailleTables.TableType.INPUT)
+			msg = utils.getAutomaticTableDisplayName(is_input=True)
 		else:
 			try:
 				brailleInput.handler.table = brailleTables.getTable(nextTable)
@@ -803,7 +804,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				msg = brailleInput.handler.table.displayName
 			except (ValueError, LookupError):
 				brailleInput.handler.table = brailleTables.getTable(
-					brailleTables.getDefaultTableForCurLang(brailleTables.TableType.INPUT)
+					default_braille_table_file_for_cur_language(is_input=True)
 				)
 				msg = brailleInput.handler.table.displayName
 		ui.message(_("Input: %s") % msg)
@@ -826,7 +827,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			config.conf["braille"]["translationTable"] = "auto"
 			# Bypass handler's table setter to avoid it overwriting config with table.fileName
 			braille.handler._table = brailleTables.getTable(
-				brailleTables.getDefaultTableForCurLang(brailleTables.TableType.OUTPUT)
+				default_braille_table_file_for_cur_language(is_input=False)
 			)
 		else:
 			config.conf["braille"]["translationTable"] = nextTable
@@ -834,21 +835,21 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				braille.handler.table = brailleTables.getTable(nextTable)
 			except (ValueError, LookupError):
 				braille.handler._table = brailleTables.getTable(
-					brailleTables.getDefaultTableForCurLang(brailleTables.TableType.OUTPUT)
+					default_braille_table_file_for_cur_language(is_input=False)
 				)
 		utils.refreshBD()
 		tabledictionaries.setDictTables()
-		msg = utils.getAutomaticTableDisplayName(brailleTables.TableType.OUTPUT) if nextTable == "auto" else addoncfg.tablesTR[addoncfg.tablesFN.index(utils.getTranslationTable())]
+		msg = utils.getAutomaticTableDisplayName(is_input=False) if nextTable == "auto" else addoncfg.tablesTR[addoncfg.tablesFN.index(utils.getTranslationTable())]
 		ui.message(_("Output: %s") % msg)
 	script_switchOutputBrailleTable.__doc__ = _("Switches between configured braille output tables")
 
 	def script_currentBrailleTable(self, gesture):
 		if config.conf["braille"]["inputTable"] == "auto":
-			inTable = utils.getAutomaticTableDisplayName(brailleTables.TableType.INPUT)
+			inTable = utils.getAutomaticTableDisplayName(is_input=True)
 		else:
 			inTable = brailleInput.handler.table.displayName
 		if config.conf["braille"]["translationTable"] == "auto":
-			ouTable = utils.getAutomaticTableDisplayName(brailleTables.TableType.OUTPUT)
+			ouTable = utils.getAutomaticTableDisplayName(is_input=False)
 		else:
 			ouTable = addoncfg.tablesTR[addoncfg.tablesFN.index(utils.getTranslationTable())]
 		if ouTable == inTable:

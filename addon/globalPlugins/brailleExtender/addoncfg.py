@@ -19,7 +19,8 @@ from .common import (
 	RC_NORMAL, RC_EMULATE_ARROWS_BEEP, RC_EMULATE_ARROWS_SILENT,
 	CHOICE_none, CHOICE_dot7, CHOICE_dot8, CHOICE_dots78, CHOICE_tags,
 	CHOICE_likeSpeech, CHOICE_disabled, CHOICE_enabled,
-	ADDON_ORDER_PROPERTIES, CHOICE_spacing, TAG_SEPARATOR
+	ADDON_ORDER_PROPERTIES, CHOICE_spacing, TAG_SEPARATOR,
+	default_braille_table_file_for_cur_language,
 )
 from .onehand import DOT_BY_DOT, ONE_SIDE, BOTH_SIDES
 
@@ -354,11 +355,7 @@ def loadGestures():
 	if gesturesFileExists:
 		inputTable = config.conf["braille"]["inputTable"]
 		if inputTable == "auto" and not noUnicodeTable:
-			from . import utils
-			if utils.supportsAutomaticBrailleTables():
-				inputTable = brailleTables.getDefaultTableForCurLang(brailleTables.TableType.INPUT)
-			else:
-				inputTable = "en-us-comp8.utb"
+			inputTable = default_braille_table_file_for_cur_language(is_input=True)
 		if os.path.exists(os.path.join(profilesDir, "_BrowseMode", inputTable + ".ini")): GLng = inputTable
 		else: GLng = 'en-us-comp8.utb'
 		gesturesBMPath = os.path.join(profilesDir, "_BrowseMode", "common.ini")

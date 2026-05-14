@@ -8,7 +8,6 @@ import os
 import addonHandler
 import braille
 import brailleInput
-import brailleTables
 import config
 import controlTypes
 import core
@@ -202,13 +201,13 @@ class BrailleTablesDlg(gui.settingsDialogs.SettingsPanel):
 	def _getOutputTablesData(self):
 		data = [(t[0], t[1]) for t in addoncfg.tables if t.output]
 		if utils.supportsAutomaticBrailleTables():
-			data.insert(0, ("auto", utils.getAutomaticTableDisplayName(brailleTables.TableType.OUTPUT)))
+			data.insert(0, ("auto", utils.getAutomaticTableDisplayName(is_input=False)))
 		return data
 
 	def _getInputTablesData(self):
 		data = [(t[0], t[1]) for t in addoncfg.tables if t.input]
 		if utils.supportsAutomaticBrailleTables():
-			data.insert(0, ("auto", utils.getAutomaticTableDisplayName(brailleTables.TableType.INPUT)))
+			data.insert(0, ("auto", utils.getAutomaticTableDisplayName(is_input=True)))
 		return data
 
 	def makeSettings(self, settingsSizer):

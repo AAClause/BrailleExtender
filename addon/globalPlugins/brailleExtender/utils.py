@@ -3,6 +3,8 @@
 # Part of BrailleExtender addon for NVDA
 # Copyright 2016-2021 André-Abush CLAUSE, released under GPL.
 
+from __future__ import annotations
+
 import os
 import re
 
@@ -26,12 +28,38 @@ from keyboardHandler import KeyboardInputGesture
 addonHandler.initTranslation()
 import treeInterceptorHandler
 import unicodedata
-from .common import INSERT_AFTER, INSERT_BEFORE, REPLACE_TEXT, baseDir, NVDA_HAS_AUTOMATIC_BRAILLE_TABLES
+from .common import (
+	INSERT_AFTER,
+	INSERT_BEFORE,
+	REPLACE_TEXT,
+	baseDir,
+	default_braille_table_file_for_cur_language,
+	NVDA_HAS_AUTOMATIC_BRAILLE_TABLES,
+)
 from . import huc
 from . import volumehelper
 
 get_mute = volumehelper.get_mute
 get_volume_level = volumehelper.get_volume_level
+
+# liblouis marks “free” input combinations with back-translated text matching this shape.
+_RE_OVERVIEW_UNUSED_COMBO = re.compile(r"^\\.+/$")
+
+
+def _resolveInputTableFileName(name: str) -> str:
+	"""Map config or UI value ``auto`` to a concrete input table file name."""
+	if name == "auto":
+		return default_braille_table_file_for_cur_language(is_input=True)
+	return name
+
+
+def _liblouisTablePaths(table_file: str) -> list[str]:
+	"""Primary table plus ``braille-patterns.cti`` (absolute paths)."""
+	tables_dir = brailleTables.TABLES_DIR
+	return [
+		os.path.join(tables_dir, table_file),
+		os.path.join(tables_dir, "braille-patterns.cti"),
+	]
 
 
 def report_volume_level():
@@ -67,12 +95,22 @@ def make_progress_bar_from_str(percentage, text, method, positive='⢼', negativ
 	return progress_bar
 
 
+def getEffectiveInputTableFileName() -> str:
+	"""Return the liblouis input table file name (never the config value ``auto``)."""
+	if brailleInput.handler is not None:
+		return brailleInput.handler.table.fileName
+	return _resolveInputTableFileName(config.conf["braille"]["inputTable"])
+
+
 def bkToChar(dots, inTable=-1):
-	if inTable == -1: inTable = config.conf["braille"]["inputTable"]
+	table_file = (
+		getEffectiveInputTableFileName()
+		if inTable == -1
+		else _resolveInputTableFileName(inTable)
+	)
 	char = chr(dots | 0x8000)
 	text = louis.backTranslate(
-		[os.path.join(r"louis\tables", inTable),
-		 "braille-patterns.cti"],
+		_liblouisTablePaths(table_file),
 		char, mode=louis.dotsIO)
 	chars = text[0]
 	if len(chars) == 1 and chars.isupper():
@@ -160,44 +198,48 @@ def getTextInBraille(t=None, table=[]):
 	res = [louis.translateString(table, l, mode=louis.ucBrl|louis.dotsIO) for l in t if l]
 	return '\n'.join(res)
 
-def combinationDesign(dots, noDot = '⠤'):
-	out = ""
-	i = 1
-	while i < 9:
-		out += str(i) if str(i) in dots else noDot
-		i += 1
-	return out
+def combinationDesign(dots, noDot="⠤"):
+	return "".join(str(n) if str(n) in dots else noDot for n in range(1, 9))
 
-def getTableOverview(tbl = ''):
+
+def getTableOverview(tbl=""):
 	"""
-	Return an overview of a input braille table.
+	Return an overview of an input braille table.
 	:param tbl: the braille table to use (default: the current input braille table).
 	:type tbl: str
 	:return: an overview of braille table in the form of a textual table
 	:rtype: str
 	"""
-	t = ""
+	table_name = _resolveInputTableFileName(tbl) if tbl else getEffectiveInputTableFileName()
+	table_paths = _liblouisTablePaths(table_name)
+	header = "Input              Output\n"
 	tmp = {}
-	available = ""
-	i = 0x2800
-	while i<0x2800+256:
-		text = louis.backTranslate([os.path.join(r"louis\tables", config.conf["braille"]["inputTable"]), "braille-patterns.cti"], chr(i), mode=louis.ucBrl)
-		if i != 0x2800:
-			t = 'Input              Output\n'
-		if not re.match(r'^\\.+/$', text[0]):
-			tmp['%s' % text[0] if text[0] != '' else '?'] = '%s       %-7s' % (
-			'%s (%s)' % (chr(i), combinationDesign(huc.unicodeBrailleToDescription(chr(i)))),
-			'%s%-8s' % (text[0].rstrip('\x00'), '%s' % (' (%-10s)' % str(hex(ord(text[0]))) if len(text[0]) == 1 else '' if text[0] != '' else '#ERROR'))
-			)
+	available_chars: list[str] = []
+	brl_start = 0x2800
+	for i in range(brl_start, brl_start + 256):
+		ch = chr(i)
+		out_text = louis.backTranslate(table_paths, ch, mode=louis.ucBrl)[0]
+		if _RE_OVERVIEW_UNUSED_COMBO.match(out_text):
+			available_chars.append(ch)
+			continue
+		dot_desc = huc.unicodeBrailleToDescription(ch)
+		left = "%s (%s)" % (ch, combinationDesign(dot_desc))
+		raw = out_text.rstrip("\x00")
+		if len(out_text) == 1 and out_text:
+			hex_note = " (%-10s)" % hex(ord(out_text))
+		elif not out_text:
+			hex_note = "#ERROR"
 		else:
-			available += chr(i)
-		i += 1
-	t += '\n'.join(tmp[k] for k in sorted(tmp))
-	nbAvailable = len(available)
-	if nbAvailable>1:
-		t += '\n'+_("Available combinations")+" (%d): %s" % (nbAvailable, available)
-	elif nbAvailable == 1:
-		t += '\n'+_("One combination available")+": %s" % available
+			hex_note = ""
+		right = "%s%-8s" % (raw, hex_note)
+		tmp[out_text if out_text else "?"] = "%s       %-7s" % (left, right)
+	body = "\n".join(tmp[k] for k in sorted(tmp))
+	t = header + body
+	nb_available = len(available_chars)
+	if nb_available > 1:
+		t += "\n" + _("Available combinations") + " (%d): %s" % (nb_available, "".join(available_chars))
+	elif nb_available == 1:
+		t += "\n" + _("One combination available") + ": %s" % available_chars[0]
 	return t
 
 def beautifulSht(t, curBD="noBraille", model=True, sep=" / "):
@@ -313,20 +355,19 @@ def supportsAutomaticBrailleTables():
 	return NVDA_HAS_AUTOMATIC_BRAILLE_TABLES
 
 
-def getAutomaticTableDisplayName(tableType):
+def getAutomaticTableDisplayName(*, is_input: bool) -> str:
 	"""Get the display string for automatic table, e.g. 'Automatic (en-us-comp8.utb)'."""
 	# Translators: An option to select a braille table automatically, according to the current language.
+	file_name = default_braille_table_file_for_cur_language(is_input=is_input)
 	return _("Automatic ({name})").format(
-		name=brailleTables.getTable(
-			brailleTables.getDefaultTableForCurLang(tableType)
-		).displayName
+		name=brailleTables.getTable(file_name).displayName,
 	)
 
 
 def getTranslationTable():
 	translationTable = config.conf["braille"]["translationTable"]
 	if translationTable == "auto":
-		return brailleTables.getDefaultTableForCurLang(brailleTables.TableType.OUTPUT)
+		return default_braille_table_file_for_cur_language(is_input=False)
 	return translationTable
 
 
@@ -336,7 +377,7 @@ def getActiveOutputTableForSwitch():
 	if tt == "auto":
 		return "auto"
 	if supportsAutomaticBrailleTables():
-		defaultTable = brailleTables.getDefaultTableForCurLang(brailleTables.TableType.OUTPUT)
+		defaultTable = default_braille_table_file_for_cur_language(is_input=False)
 		if braille.handler.table.fileName == defaultTable:
 			return "auto"
 	return tt
@@ -348,7 +389,7 @@ def getActiveInputTableForSwitch():
 	if it == "auto":
 		return "auto"
 	if supportsAutomaticBrailleTables():
-		defaultTable = brailleTables.getDefaultTableForCurLang(brailleTables.TableType.INPUT)
+		defaultTable = default_braille_table_file_for_cur_language(is_input=True)
 		if brailleInput.handler.table.fileName == defaultTable:
 			return "auto"
 	return brailleInput.handler.table.fileName
@@ -369,13 +410,10 @@ def getCurrentBrailleTables(input_=False, brf=False):
 			app = None
 		if app and app.appName != "nvda": tables += tabledictionaries.dictTables
 		if input_:
-			mainTable = os.path.join(brailleTables.TABLES_DIR, brailleInput.handler._table.fileName)
+			tfile = brailleInput.handler._table.fileName
 		else:
-			mainTable = os.path.join(brailleTables.TABLES_DIR, getTranslationTable())
-		tables += [
-			mainTable,
-			os.path.join(brailleTables.TABLES_DIR, "braille-patterns.cti")
-		]
+			tfile = getTranslationTable()
+		tables += _liblouisTablePaths(tfile)
 	return tables
 
 
