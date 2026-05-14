@@ -1,13 +1,14 @@
-# coding: utf-8
-# braille_terminal.py — BrailleExtender: console / terminal review tethering
-# Copyright 2016-2022 André-Abush CLAUSE, released under GPL.
-
 """Force NVDA's internal braille tether and region type for terminals.
 
 NVDA uses ``BrailleHandler._tether`` (not only ``getTether()``) when building regions on
 ``handleGainFocus``. Overriding ``getTether()`` alone made the review cursor shape appear while
 ``TextInfoRegion`` still followed the caret, so display line keys did nothing until the review
 cursor moved from the keyboard.
+
+``handleCaretMove`` also calls ``setTether(FOCUS, auto=True)`` on every caret update. With
+``tetherTo`` set to automatic, that undid the terminal review tether as soon as the caret moved
+inside the same terminal. We patch caret handling to keep review tether and refresh via
+``handleReviewMove`` instead.
 """
 
 from __future__ import annotations
@@ -106,6 +107,51 @@ def _restore_tether_after_terminal(handler: Any) -> None:
 		handler.TETHER_FOCUS if configured == handler.TETHER_AUTO else configured
 	)
 	handler.mainBuffer.clear()
+
+
+def make_patched_set_tether(_originals: dict[str, Any]) -> Callable[..., None]:
+	"""Return a ``BrailleHandler.setTether`` wrapper so explicit focus tether clears terminal review."""
+
+	def setTether_brailleExtender(self, tether: Any, auto: bool = False) -> None:
+		orig = _originals["BrailleHandler.setTether"]
+		if (
+			not auto
+			and tether == self.TETHER_FOCUS
+			and getattr(self, "_be_terminal_review_override", False)
+		):
+			self._be_terminal_review_override = False
+		return orig(self, tether, auto=auto)
+
+	return setTether_brailleExtender
+
+
+def make_patched_handle_caret_move(_originals: dict[str, Any]) -> Callable[..., None]:
+	"""Return a ``BrailleHandler.handleCaretMove`` replacement."""
+
+	def handleCaretMove_brailleExtender(self, obj: Any, shouldAutoTether: bool = True) -> None:
+		orig = _originals["BrailleHandler.handleCaretMove"]
+		if not self.enabled:
+			return orig(self, obj, shouldAutoTether=shouldAutoTether)
+		if _braille_speech_output_blocks_gain_focus(self):
+			return
+		if _object_below_lock_screen(obj):
+			return orig(self, obj, shouldAutoTether=shouldAutoTether)
+
+		resolved = _resolve_tree_interceptor_text_buffer(obj)
+		if (
+			config.conf["brailleExtender"]["reviewModeTerminal"]
+			and getattr(self, "_be_terminal_review_override", False)
+			and is_terminal_braille_focus_object(resolved)
+		):
+			if self._tether != self.TETHER_REVIEW:
+				self._tether = self.TETHER_REVIEW
+			_sync_review_position_to_object_caret(resolved)
+			self.handleReviewMove(shouldAutoTether=False)
+			return
+
+		return orig(self, obj, shouldAutoTether=shouldAutoTether)
+
+	return handleCaretMove_brailleExtender
 
 
 def make_patched_handle_gain_focus(_originals: dict[str, Any]) -> Callable[..., None]:

@@ -132,6 +132,10 @@ def _saveOriginals():
 	o["getPropertiesBraille"] = braille.getPropertiesBraille
 	o["BrailleHandler.getTether"] = braille.BrailleHandler.getTether
 	o["BrailleHandler.handleGainFocus"] = braille.BrailleHandler.handleGainFocus
+	if hasattr(braille.BrailleHandler, "handleCaretMove"):
+		o["BrailleHandler.handleCaretMove"] = braille.BrailleHandler.handleCaretMove
+	if hasattr(braille.BrailleHandler, "setTether"):
+		o["BrailleHandler.setTether"] = braille.BrailleHandler.setTether
 	o["BrailleHandler._displayWithCursor"] = getattr(
 		braille.BrailleHandler, "_displayWithCursor", None
 	)
@@ -1359,7 +1363,11 @@ def apply_patches() -> None:
 		_try_apply("louis_createTablesString", _apply_louis)
 
 	def _apply_braille_handler():
-		from .braille_terminal import make_patched_handle_gain_focus
+		from .braille_terminal import (
+			make_patched_handle_caret_move,
+			make_patched_handle_gain_focus,
+			make_patched_set_tether,
+		)
 
 		braille.BrailleHandler.AutoScroll = autoscroll.AutoScroll
 		braille.BrailleHandler._auto_scroll = None
@@ -1372,6 +1380,10 @@ def apply_patches() -> None:
 		braille.BrailleHandler._displayWithCursor = _displayWithCursor
 		braille.BrailleHandler.getTether = getTetherWithRoleTerminal
 		braille.BrailleHandler.handleGainFocus = make_patched_handle_gain_focus(_originals)
+		if _originals.get("BrailleHandler.setTether"):
+			braille.BrailleHandler.setTether = make_patched_set_tether(_originals)
+		if _originals.get("BrailleHandler.handleCaretMove"):
+			braille.BrailleHandler.handleCaretMove = make_patched_handle_caret_move(_originals)
 	_try_apply("braille_handler", _apply_braille_handler)
 
 	def _apply_execute_gesture():
@@ -1462,6 +1474,10 @@ def unload_patches() -> None:
 			braille.BrailleHandler.getTether = _originals["BrailleHandler.getTether"]
 			if _originals.get("BrailleHandler.handleGainFocus"):
 				braille.BrailleHandler.handleGainFocus = _originals["BrailleHandler.handleGainFocus"]
+			if _originals.get("BrailleHandler.setTether"):
+				braille.BrailleHandler.setTether = _originals["BrailleHandler.setTether"]
+			if _originals.get("BrailleHandler.handleCaretMove"):
+				braille.BrailleHandler.handleCaretMove = _originals["BrailleHandler.handleCaretMove"]
 			if _originals.get("BrailleHandler._displayWithCursor"):
 				braille.BrailleHandler._displayWithCursor = _originals["BrailleHandler._displayWithCursor"]
 			for attr in ("AutoScroll", "_auto_scroll", "get_auto_scroll_delay", "get_dynamic_auto_scroll_delay",
