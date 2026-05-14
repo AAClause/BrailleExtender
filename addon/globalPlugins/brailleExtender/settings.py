@@ -358,7 +358,7 @@ class QuickLaunchesDlg(gui.settingsDialogs.SettingsDialog):
 				self.quickKeys.SetItems(self.getQuickLaunchList())
 				self.quickKeys.SetSelection(len(self.quickLaunchGestures)-1)
 				self.onQuickKeys(None)
-				queueHandler.queueFunction(queueHandler.eventQueue, ui.message, _("The gesture captured is %s") % utils.beautifulSht(gesture.normalizedIdentifiers[0]))
+				queueHandler.queueFunction(queueHandler.eventQueue, ui.message, _("The gesture captured is %s") % utils.format_gesture_identifiers(gesture.normalizedIdentifiers[0]))
 				inputCore.manager._captureFunc = None
 				self.captureEnabled = False
 				self.addGestureBtn.SetLabel(self.captureLabelBtn)
@@ -368,7 +368,7 @@ class QuickLaunchesDlg(gui.settingsDialogs.SettingsDialog):
 
 	def getQuickLaunchList(s):
 		quickLaunchGesturesKeys = list(s.quickLaunchGestures)
-		return ['%s%s: %s' % (utils.beautifulSht(quickLaunchGesturesKeys[i]), punctuationSeparator, v) for i, v in enumerate(s.quickLaunchLocations)]
+		return ['%s%s: %s' % (utils.format_gesture_identifiers(quickLaunchGesturesKeys[i]), punctuationSeparator, v) for i, v in enumerate(s.quickLaunchLocations)]
 
 	def onRemoveGestureBtn(self, event):
 		if self.quickKeys.GetSelection() < 0:

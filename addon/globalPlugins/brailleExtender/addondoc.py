@@ -85,7 +85,7 @@ def getFeaturesDoc() -> str:
 		],
 		_("Getting Current Character Info"): [
 			"<p>",
-			_("This feature allows you to obtain various information regarding the character under the cursor using the current input braille table, such as:"),
+			_("This feature reports technical details for the character at the review cursor using the current input braille table, including:"),
 			"<br />",
 			_("the HUC8 and HUC6 representations; the hexadecimal, decimal, octal or binary values; A description of the character if possible; the Unicode braille representation and the braille pattern dots."),
 			"</p><p>",
@@ -239,7 +239,7 @@ class AddonDoc:
 			doc += "<ul>"
 			for g in braille.handler.display.gestureMap._map:
 				doc += ("<li>{}{}: {}{};</li>").format(
-					utils.beautifulSht(g),
+					utils.format_gesture_identifiers(g),
 					punctuationSeparator,
 					utils.uncapitalize(
 						re.sub(
@@ -404,26 +404,26 @@ class AddonDoc:
 				if isinstance(lst[g], list):
 					doc += "<li>{0}{2}: {1}{2};</li>".format(
 						utils.getKeysTranslation(g),
-						utils.beautifulSht(lst[g]),
+						utils.format_gesture_identifiers(lst[g]),
 						punctuationSeparator,
 					)
 				else:
 					doc += "<li>{0}{2}: {1}{2};</li>".format(
 						utils.getKeysTranslation(g),
-						utils.beautifulSht(lst[g]),
+						utils.format_gesture_identifiers(lst[g]),
 						punctuationSeparator,
 					)
 			elif "kb:" in g:
 				gt = _("caps lock") if "capsLock" in g else g
 				doc += "<li>{0}{2}: {1}{2};</li>".format(
 					gt.replace("kb:", ""),
-					utils.beautifulSht(lst[g]),
+					utils.format_gesture_identifiers(lst[g]),
 					punctuationSeparator,
 				)
 			else:
 				if isinstance(lst[g], list):
 					doc += "<li>{}{}: {}{};</li>".format(
-						utils.beautifulSht(lst[g]),
+						utils.format_gesture_identifiers(lst[g]),
 						punctuationSeparator,
 						re.sub(
 							"^([A-Z])",
@@ -434,7 +434,7 @@ class AddonDoc:
 					)
 				else:
 					doc += "<li>{}{}: {}{};</li>".format(
-						utils.beautifulSht(lst[g]),
+						utils.format_gesture_identifiers(lst[g]),
 						punctuationSeparator,
 						re.sub(
 							"^([A-Z])",
