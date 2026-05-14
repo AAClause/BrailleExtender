@@ -98,7 +98,8 @@ CHOICE_dot7 = "dot7"
 CHOICE_dot8 = "dot8"
 CHOICE_dots78 = "dots78"
 CHOICE_tags = "tags"
-CHOICE_spacing = "spacing"
+CHOICE_spacing = "spacing"  # legacy alignment config value; treated like ``CHOICE_linePad`` at runtime
+CHOICE_linePad = "linePad"  # alignment-only: prepend braille blanks to suggest visual position on the display
 TAG_SEPARATOR = chr(5)
 # Stored as '0' in config. Means “match NVDA Document formatting” + core braille markers when present — not “mirror speech output”.
 CHOICE_likeSpeech = '0'

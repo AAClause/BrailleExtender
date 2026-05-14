@@ -31,7 +31,8 @@ from .common import (
 	CHOICE_enabled,
 	CHOICE_disabled,
 	TAG_SEPARATOR,
-	CHOICE_spacing
+	CHOICE_linePad,
+	CHOICE_spacing,
 )
 
 addonHandler.initTranslation()
@@ -66,6 +67,12 @@ _NVDA_MANAGED_CLASSIC_FONT_ATTRS: frozenset[str] = frozenset(
 _NVDA_SEMANTIC_EMPHASIS_ATTRS: frozenset[str] = frozenset(("strong", "emphasised"))
 _NVDA_SEMANTIC_MARK_ATTRS: frozenset[str] = frozenset(("marked",))
 
+# Alignment method buckets (config string values).
+_ALIGNMENT_PAD_METHODS: frozenset[str] = frozenset((CHOICE_linePad, CHOICE_spacing))
+_ALIGNMENT_NO_BRLEX_OVERLAY: frozenset[str] = frozenset(
+	(CHOICE_none, CHOICE_tags, CHOICE_linePad, CHOICE_spacing, CHOICE_liblouis)
+)
+
 CHOICES_LABELS = {
 	CHOICE_none: _("nothing"),
 	CHOICE_liblouis: _("hand over to Liblouis (defined in tables)"),
@@ -73,6 +80,24 @@ CHOICES_LABELS = {
 	CHOICE_dot7: _("dot 7"),
 	CHOICE_dot8: _("dot 8"),
 	CHOICE_tags: _("tags"),
+}
+
+# Alignment methods (Methods dialog). ``CHOICE_spacing`` is legacy; treated like ``CHOICE_linePad``. Liblouis is not used for alignment.
+ALIGNMENT_METHOD_ORDER: tuple[str, ...] = (
+	CHOICE_none,
+	CHOICE_linePad,
+	CHOICE_dot7,
+	CHOICE_dot8,
+	CHOICE_dots78,
+	CHOICE_tags,
+)
+ALIGNMENT_METHOD_LABELS: dict[str, str] = {
+	CHOICE_none: CHOICES_LABELS[CHOICE_none],
+	CHOICE_linePad: _("Pad display line (blanks)"),
+	CHOICE_dot7: CHOICES_LABELS[CHOICE_dot7],
+	CHOICE_dot8: CHOICES_LABELS[CHOICE_dot8],
+	CHOICE_dots78: CHOICES_LABELS[CHOICE_dots78],
+	CHOICE_tags: CHOICES_LABELS[CHOICE_tags],
 }
 
 TAG_FORMATTING = namedtuple("TAG_FORMATTING", ("start", "end"))
@@ -291,6 +316,21 @@ def get_liblouis_typeform(attr_name: str) -> int:
 	return _LIBLOUIS_FLAGS_BY_ATTR.get(attr_name, louis.plain_text)
 
 
+def _or_braille_mask_on_cell_span(region: Any, start_b: int, end_b: int, mask: int) -> None:
+	if not mask:
+		return
+	for bp in range(start_b, end_b + 1):
+		region.brailleCells[bp] |= mask
+
+
+def _or_braille_mask_across_raw_positions(region: Any, mask: int) -> None:
+	if not mask or not getattr(region, "rawText", None):
+		return
+	for raw_pos in range(len(region.rawText)):
+		sb, eb = regionhelper.getBraillePosFromRawPos(region, raw_pos)
+		_or_braille_mask_on_cell_span(region, sb, eb, mask)
+
+
 def decorator(fn, s):
 	def _getTypeformFromFormatField(self, field, formatConfig=None):
 		if formatConfig is None:
@@ -347,7 +387,6 @@ def decorator(fn, s):
 
 	def addTextWithFields_edit(self, info, formatConfig, isSelection=False):
 		formatConfig_ = formatConfig.copy()
-		keysToEnable = []
 		for e in LABELS_REPORTS.keys():
 			normalized_key = normalize_report_key(e)
 			if not normalized_key:
@@ -395,40 +434,21 @@ def decorator(fn, s):
 					postReplacements.append(regionhelper.BrailleCellReplacement(
 						start=0, insertBefore=('⠀' * s)))
 		formatField = self.formatField
-		"""
-		if get_report("indentations") and not noAlign and formatField.get("left-indent"):
-			leftIndent = formatField.get("left-indent").split('.')
-			postReplacements.append(regionhelper.BrailleCellReplacement(
-				start=0, insertBefore=('⠀' * abs(int(leftIndent[0])))))
-		"""
 		if not noAlign and get_report("alignments"):
 			textAlign = formatField.get("text-align")
-			if textAlign and get_method_alignment(textAlign) == CHOICE_spacing and textAlign not in ["start", "left"]:
-				textAlign = normalizeTextAlign(textAlign)
-				pct = {
-					"justified": 0.25,
-					"center": 0.5,
-					"right": 0.75,
-				}
+			if textAlign and alignment_uses_display_line_pad(textAlign) and textAlign not in ("start", "left"):
+				textAlign_norm = normalizeTextAlign(textAlign) or textAlign
 				displaySize = braille.handler.displaySize
-				sizeBrailleCells = len(self.brailleCells) - 1
-				start = None
-				if textAlign in ["center", "right"] and displaySize - 1 > sizeBrailleCells:
-					if textAlign == "center":
-						start = int((displaySize - sizeBrailleCells) / 2)
-					else:
-						start = displaySize - sizeBrailleCells
-				elif textAlign == "justified":
-					start = 3
-				elif textAlign in pct:
-					start = int(pct[textAlign] *
-								braille.handler.displaySize) - 1
-				else:
-					log.error(f"Unknown text-align {textAlign}")
-				if start is not None:
-					s = "⠀" * start
+				content_cells = len(self.brailleCells) - 1
+				pad_len = alignment_display_line_pad_len(
+					textAlign_norm, displaySize, content_cells
+				)
+				if pad_len > 0:
 					postReplacements.append(
-						regionhelper.BrailleCellReplacement(start=0, insertBefore=s))
+						regionhelper.BrailleCellReplacement(
+							start=0, insertBefore=("⠀" * pad_len)
+						)
+					)
 		if postReplacements:
 			regionhelper.replaceBrailleCells(self, postReplacements)
 		if self.brlex_typeforms:
@@ -438,9 +458,11 @@ def decorator(fn, s):
 				if raw_pos in cell_masks_by_raw_pos:
 					active_cell_mask = cell_masks_by_raw_pos[raw_pos]
 				if active_cell_mask:
-					start_braille, end_braille = regionhelper.getBraillePosFromRawPos(self, raw_pos)
-					for braille_pos in range(start_braille, end_braille + 1):
-						self.brailleCells[braille_pos] |= active_cell_mask
+					sb, eb = regionhelper.getBraillePosFromRawPos(self, raw_pos)
+					_or_braille_mask_on_cell_span(self, sb, eb, active_cell_mask)
+		align_dots = alignment_dots_cell_mask(formatField.get("text-align"))
+		if align_dots and not noAlign and get_report("alignments"):
+			_or_braille_mask_across_raw_positions(self, align_dots)
 
 	if s == "addTextWithFields":
 		return addTextWithFields_edit
@@ -486,11 +508,87 @@ def normalizeTextAlign(desc):
 	return desc
 
 
-def get_method_alignment(desc):
+def get_method_alignment(desc: str) -> str | None:
 	sect = conf["alignments"]
-	if desc in sect:
-		return sect[desc]
+	if desc not in sect:
+		return None
+	return sect[desc]
+
+
+def alignment_config_side_key(text_align_raw: str | None) -> str | None:
+	"""Map a ``text-align`` field value to ``alignments`` keys ``left`` / ``center`` / ``right`` / ``justified``."""
+	if not text_align_raw or not isinstance(text_align_raw, str):
+		return None
+	al = (normalizeTextAlign(text_align_raw) or text_align_raw).lower()
+	if al in ("start", "left"):
+		return "left"
+	if al in ("end", "right"):
+		return "right"
+	if al in ("center",):
+		return "center"
+	if al in ("justified", "distribute"):
+		return "justified"
 	return None
+
+
+def _alignment_side_and_method(text_align_raw: str | None) -> tuple[str | None, str | None]:
+	side = alignment_config_side_key(text_align_raw)
+	if not side:
+		return None, None
+	return side, get_method_alignment(side)
+
+
+def alignment_uses_display_line_pad(text_align_raw: str | None) -> bool:
+	_, method = _alignment_side_and_method(text_align_raw)
+	return bool(method) and method in _ALIGNMENT_PAD_METHODS
+
+
+def alignment_dots_cell_mask(text_align_raw: str | None) -> int:
+	_, method = _alignment_side_and_method(text_align_raw)
+	if not method or method in _ALIGNMENT_NO_BRLEX_OVERLAY:
+		return 0
+	return int(BRLEX_CELL_MASK_BY_METHOD.get(method, 0))
+
+
+def alignment_method_shows_format_tags(text_align_raw: str | None) -> bool:
+	_, method = _alignment_side_and_method(text_align_raw)
+	return method == CHOICE_tags
+
+
+def alignment_display_line_pad_len(
+	text_align: str, display_size: int, content_cells: int,
+) -> int:
+	"""How many leading blank cells to insert in pad alignment mode.
+
+	``usable = display_size - 1`` reserves one cell (routing).
+
+	When ``content_cells <= usable``, the whole line fits in the logical width: use classic
+	block alignment (center / flush right / capped 25% lead for justified).
+
+	When the line is longer than ``usable``, anchor the first content cell at a fixed fraction
+	of ``usable`` (center ~50%, right ~75%, justified ~25%); NVDA scrolls the rest as usual.
+	"""
+	usable = max(0, display_size - 1)
+	content_cells = max(0, content_cells)
+	al = (normalizeTextAlign(text_align) or text_align or "").lower()
+	if al in ("start", "left"):
+		return 0
+	if content_cells <= usable:
+		if al == "center":
+			return (usable - content_cells) // 2
+		if al == "right":
+			return usable - content_cells
+		if al in ("justified", "distribute"):
+			lead = (usable + 2) // 4
+			return min(lead, usable - content_cells)
+		return 0
+	if al == "center":
+		return usable // 2
+	if al == "right":
+		return (3 * usable + 2) // 4
+	if al in ("justified", "distribute"):
+		return (usable + 2) // 4
+	return 0
 
 
 class ManageMethods(wx.Dialog):
@@ -503,108 +601,125 @@ class ManageMethods(wx.Dialog):
 		super().__init__(parent, title=title)
 		mainSizer = wx.BoxSizer(wx.VERTICAL)
 		sHelper = gui.guiHelper.BoxSizerHelper(self, orientation=wx.VERTICAL)
+
+		# Translators: Short help text at the top of the Formatting Method dialog.
+		sHelper.addItem(
+			wx.StaticText(
+				self,
+				label=_(
+					"For each item, choose how it is shown in braille (nothing, Liblouis, dots 7–8, tags, …). "
+					"For alignment, you can use nothing, pad the line with blanks, dots 7 / 8 / 7+8 on the line, or tags."
+				),
+			)
+		)
+
 		choices = list(CHOICES_LABELS.values())
-		self.spellingErrors = sHelper.addLabeledControl(
+
+		def add_group(title: str) -> gui.guiHelper.BoxSizerHelper:
+			box = wx.StaticBox(self, label=title)
+			boxSizer = wx.StaticBoxSizer(box, wx.VERTICAL)
+			inner = gui.guiHelper.BoxSizerHelper(self, sizer=boxSizer)
+			sHelper.addItem(boxSizer)
+			return inner
+
+		# --- Spelling and grammar ---
+		gSpell = add_group(_("Spelling and grammar"))
+		self.spellingErrors = gSpell.addLabeledControl(
 			_("&Spelling errors:"), wx.Choice, choices=choices
 		)
-		self.spellingErrors.SetSelection(
-			self.getItemToSelect("invalid-spelling"))
-		self.grammarError = sHelper.addLabeledControl(
+		self.spellingErrors.SetSelection(self.getItemToSelect("invalid-spelling"))
+		self.grammarError = gSpell.addLabeledControl(
 			_("&Grammar errors:"), wx.Choice, choices=choices
 		)
 		self.grammarError.SetSelection(self.getItemToSelect("invalid-grammar"))
-		self.bold = sHelper.addLabeledControl(
-			_("B&old:"), wx.Choice, choices=choices
-		)
+
+		# --- Classic font attributes ---
+		gFont = add_group(_("Font styling (bold, italic, …)"))
+		self.bold = gFont.addLabeledControl(_("B&old:"), wx.Choice, choices=choices)
 		self.bold.SetSelection(self.getItemToSelect("bold"))
-		self.italic = sHelper.addLabeledControl(
-			_("&Italic:"), wx.Choice, choices=choices
-		)
+		self.italic = gFont.addLabeledControl(_("&Italic:"), wx.Choice, choices=choices)
 		self.italic.SetSelection(self.getItemToSelect("italic"))
-		self.underline = sHelper.addLabeledControl(
-			_("&Underline:"), wx.Choice, choices=choices
-		)
+		self.underline = gFont.addLabeledControl(_("&Underline:"), wx.Choice, choices=choices)
 		self.underline.SetSelection(self.getItemToSelect("underline"))
-		self.strikethrough = sHelper.addLabeledControl(
+		self.strikethrough = gFont.addLabeledControl(
 			_("Strike&through:"), wx.Choice, choices=choices
 		)
 		self.strikethrough.SetSelection(self.getItemToSelect("strikethrough"))
-		self.strong = sHelper.addLabeledControl(
-			_("Strong e&mphasis:"), wx.Choice, choices=choices
-		)
+
+		# --- Semantic emphasis / highlight ---
+		gEm = add_group(_("Emphasis and highlighting"))
+		self.strong = gEm.addLabeledControl(_("Strong e&mphasis:"), wx.Choice, choices=choices)
 		self.strong.SetSelection(self.getItemToSelect("strong"))
-		self.emphasised = sHelper.addLabeledControl(
-			_("E&mphasised text:"), wx.Choice, choices=choices
-		)
+		self.emphasised = gEm.addLabeledControl(_("E&mphasised text:"), wx.Choice, choices=choices)
 		self.emphasised.SetSelection(self.getItemToSelect("emphasised"))
-		self.marked = sHelper.addLabeledControl(
-			_("Mar&ked (highlighted):"), wx.Choice, choices=choices
-		)
+		self.marked = gEm.addLabeledControl(_("Mar&ked (highlighted):"), wx.Choice, choices=choices)
 		self.marked.SetSelection(self.getItemToSelect("marked"))
-		self.sub = sHelper.addLabeledControl(
-			_("Su&bscripts:"), wx.Choice, choices=choices
-		)
+
+		# --- Subscript / superscript ---
+		gScript = add_group(_("Subscripts and superscripts"))
+		self.sub = gScript.addLabeledControl(_("Su&bscripts:"), wx.Choice, choices=choices)
 		self.sub.SetSelection(self.getItemToSelect("text-position:sub"))
-		self.super = sHelper.addLabeledControl(
-			_("Su&perscripts:"), wx.Choice, choices=choices
-		)
+		self.super = gScript.addLabeledControl(_("Su&perscripts:"), wx.Choice, choices=choices)
 		self.super.SetSelection(self.getItemToSelect("text-position:super"))
 
-		bHelper = gui.guiHelper.ButtonHelper(orientation=wx.HORIZONTAL)
-		sHelper.addItem(bHelper)
-		sHelper.addDialogDismissButtons(
-			self.CreateButtonSizer(wx.OK | wx.CANCEL))
-		mainSizer.Add(sHelper.sizer, border=20, flag=wx.ALL)
+		# --- Alignment (subset of methods) ---
+		gAlign = add_group(_("Text alignment (braille)"))
+		align_choices = [ALIGNMENT_METHOD_LABELS[k] for k in ALIGNMENT_METHOD_ORDER]
+		self._align_controls: dict[str, wx.Choice] = {}
+		for side, label in (
+			("left", _("&Left / start:")),
+			("center", _("C&entered:")),
+			("right", _("&Right:")),
+			("justified", _("&Justified:")),
+		):
+			ch = gAlign.addLabeledControl(label, wx.Choice, choices=align_choices)
+			ch.SetSelection(ManageMethods._alignment_method_index(side))
+			self._align_controls[side] = ch
+
+		sHelper.addDialogDismissButtons(self.CreateButtonSizer(wx.OK | wx.CANCEL))
+		mainSizer.Add(sHelper.sizer, border=20, flag=wx.ALL | wx.EXPAND)
 		mainSizer.Fit(self)
 		self.SetSizer(mainSizer)
 		self.Bind(wx.EVT_BUTTON, self.onOk, id=wx.ID_OK)
 		self.spellingErrors.SetFocus()
 
 	@staticmethod
-	def getItemToSelect(attribute):
+	def _alignment_method_index(side: str) -> int:
+		raw = conf["alignments"].get(side, CHOICE_tags)
+		if raw == CHOICE_spacing:
+			raw = CHOICE_linePad
+		if raw not in ALIGNMENT_METHOD_ORDER:
+			return ALIGNMENT_METHOD_ORDER.index(CHOICE_tags)
+		return ALIGNMENT_METHOD_ORDER.index(raw)
+
+	@staticmethod
+	def getItemToSelect(attribute: str) -> int:
 		try:
-			idx = list(CHOICES_LABELS.keys()).index(
-				conf["methods"][attribute]
+			return list(CHOICES_LABELS.keys()).index(
+				conf["methods"].get(attribute, CHOICE_none)
 			)
-		except BaseException as err:
-			log.error(err)
-			idx = 0
-		return idx
+		except ValueError:
+			log.debugWarning("BrailleExtender: unknown formatting method %r", attribute)
+			return 0
 
 	def onOk(self, evt):
-		conf["methods"]["invalid-spelling"] = list(
-			CHOICES_LABELS.keys()
-		)[self.spellingErrors.GetSelection()]
-		conf["methods"]["invalid-grammar"] = list(
-			CHOICES_LABELS.keys()
-		)[self.grammarError.GetSelection()]
-		conf["methods"]["bold"] = list(
-			CHOICES_LABELS.keys()
-		)[self.bold.GetSelection()]
-		conf["methods"]["italic"] = list(
-			CHOICES_LABELS.keys()
-		)[self.italic.GetSelection()]
-		conf["methods"]["underline"] = list(
-			CHOICES_LABELS.keys()
-		)[self.underline.GetSelection()]
-		conf["methods"]["strikethrough"] = list(
-			CHOICES_LABELS.keys()
-		)[self.strikethrough.GetSelection()]
-		conf["methods"]["strong"] = list(
-			CHOICES_LABELS.keys()
-		)[self.strong.GetSelection()]
-		conf["methods"]["emphasised"] = list(
-			CHOICES_LABELS.keys()
-		)[self.emphasised.GetSelection()]
-		conf["methods"]["marked"] = list(
-			CHOICES_LABELS.keys()
-		)[self.marked.GetSelection()]
-		conf["methods"]["text-position:sub"] = list(
-			CHOICES_LABELS.keys()
-		)[self.sub.GetSelection()]
-		conf["methods"]["text-position:super"] = list(
-			CHOICES_LABELS.keys()
-		)[self.super.GetSelection()]
+		method_keys = list(CHOICES_LABELS.keys())
+		for attr, ctrl in (
+			("invalid-spelling", self.spellingErrors),
+			("invalid-grammar", self.grammarError),
+			("bold", self.bold),
+			("italic", self.italic),
+			("underline", self.underline),
+			("strikethrough", self.strikethrough),
+			("strong", self.strong),
+			("emphasised", self.emphasised),
+			("marked", self.marked),
+			("text-position:sub", self.sub),
+			("text-position:super", self.super),
+		):
+			conf["methods"][attr] = method_keys[ctrl.GetSelection()]
+		for side, ch in self._align_controls.items():
+			conf["alignments"][side] = ALIGNMENT_METHOD_ORDER[ch.GetSelection()]
 		self.Destroy()
 
 
@@ -648,12 +763,10 @@ class ManageTags(wx.Dialog):
 
 	def onTags(self, evt=None):
 		k = self.get_key_attribute()
-		self.tags[k] = self.startTag.GetValue()
-		tag = TAG_FORMATTING(
+		self.tags[k] = TAG_FORMATTING(
 			self.startTag.GetValue(),
 			self.endTag.GetValue()
 		)
-		self.tags[k] = tag
 
 	def onFormatting(self, evt=None):
 		k = self.get_key_attribute()
@@ -733,7 +846,7 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		self.tagsBtn.SetFocus()
 
 	def postInit(self):
-		self.reportFontAttributes.SetFocus()
+		self.methodsBtn.SetFocus()
 
 	def onSave(self):
 		conf["plainText"] = self.plainText.IsChecked()

@@ -19,7 +19,7 @@ from .common import (
 	RC_NORMAL, RC_EMULATE_ARROWS_BEEP, RC_EMULATE_ARROWS_SILENT,
 	CHOICE_none, CHOICE_dot7, CHOICE_dot8, CHOICE_dots78, CHOICE_tags,
 	CHOICE_likeSpeech, CHOICE_disabled, CHOICE_enabled,
-	ADDON_ORDER_PROPERTIES, CHOICE_spacing, TAG_SEPARATOR,
+	ADDON_ORDER_PROPERTIES, CHOICE_spacing, CHOICE_linePad, TAG_SEPARATOR,
 	default_braille_table_file_for_cur_language,
 )
 from .onehand import DOT_BY_DOT, ONE_SIDE, BOTH_SIDES
@@ -186,10 +186,10 @@ def getConfspec():
 			"processLinePerLine": "boolean(default=False)",
 			"alignments": {
 				"enabled": "boolean(default=True)",
-				"left": f"option({CHOICE_none}, {CHOICE_spacing}, {CHOICE_tags}, default={CHOICE_tags})",
-				"right": f"option({CHOICE_none}, {CHOICE_spacing}, {CHOICE_tags}, default={CHOICE_tags})",
-				"center": f"option({CHOICE_none}, {CHOICE_spacing}, {CHOICE_tags}, default={CHOICE_tags})",
-				"justified": f"option({CHOICE_none}, {CHOICE_spacing}, {CHOICE_tags}, default={CHOICE_tags})",
+				"left": f"option({CHOICE_none}, {CHOICE_linePad}, {CHOICE_dot7}, {CHOICE_dot8}, {CHOICE_dots78}, {CHOICE_spacing}, {CHOICE_tags}, default={CHOICE_tags})",
+				"right": f"option({CHOICE_none}, {CHOICE_linePad}, {CHOICE_dot7}, {CHOICE_dot8}, {CHOICE_dots78}, {CHOICE_spacing}, {CHOICE_tags}, default={CHOICE_tags})",
+				"center": f"option({CHOICE_none}, {CHOICE_linePad}, {CHOICE_dot7}, {CHOICE_dot8}, {CHOICE_dots78}, {CHOICE_spacing}, {CHOICE_tags}, default={CHOICE_tags})",
+				"justified": f"option({CHOICE_none}, {CHOICE_linePad}, {CHOICE_dot7}, {CHOICE_dot8}, {CHOICE_dots78}, {CHOICE_spacing}, {CHOICE_tags}, default={CHOICE_tags})",
 			},
 			"cellFormula": "boolean(default=True)",
 			"methods": {

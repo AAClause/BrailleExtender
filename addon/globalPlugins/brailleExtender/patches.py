@@ -76,6 +76,7 @@ from .documentformatting import (
 	normalize_report_key,
 	report_row_follows_nvda,
 	use_be_format_field_chrome,
+	alignment_method_shows_format_tags,
 )
 from .objectpresentation import getPropertiesBraille, selectedElementEnabled, update_NVDAObjectRegion
 from .onehand import process as processOneHandMode
@@ -694,6 +695,7 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 				log.debugWarning("BrailleExtender: collapsed state label failed", exc_info=True)
 
 	if formatConfig["reportPage"] and use_be_format_field_chrome("page"):
+		pageNumber = field.get("page-number")
 		oldPageNumber = fieldCache.get(
 			"page-number") if fieldCache is not None else None
 		if pageNumber and pageNumber != oldPageNumber:
@@ -735,7 +737,11 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 	if formatConfig["reportAlignment"] and use_be_format_field_chrome("alignment"):
 		textAlign = normalizeTextAlign(field.get("text-align"))
 		old_textAlign = normalizeTextAlign(fieldCache.get("text-align"))
-		if textAlign and textAlign != old_textAlign:
+		if (
+			textAlign
+			and textAlign != old_textAlign
+			and alignment_method_shows_format_tags(field.get("text-align"))
+		):
 			tag = get_tags(f"text-align:{textAlign}")
 			if tag:
 				textList.append(tag.start)
