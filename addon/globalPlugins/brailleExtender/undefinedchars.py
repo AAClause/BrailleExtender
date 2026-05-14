@@ -147,12 +147,53 @@ def _isCharExcludedFromDesc(c: str) -> bool:
 	return cp in excluded_set or any(s <= cp <= e for s, e in excluded_ranges)
 
 
+def _extended_glyph_excluded_from_ranges(
+	glyph: str,
+	excluded_set: frozenset[int],
+	excluded_ranges: tuple[tuple[int, int], ...],
+) -> bool:
+	if not glyph or (not excluded_set and not excluded_ranges):
+		return False
+	return any(
+		ord(ch) in excluded_set or any(s <= ord(ch) <= e for s, e in excluded_ranges)
+		for ch in glyph
+	)
+
+
 def _clearCaches() -> None:
 	global _descCharCache, _undefinedSignCache, _brailledTagCache, _excludeDescConfigValue
 	_descCharCache.clear()
 	_undefinedSignCache.clear()
 	_brailledTagCache.clear()
 	_excludeDescConfigValue = ""
+
+
+_DESC_CACHE_MAX = 512
+_TAG_CACHE_MAX = 32
+
+
+def _bounded_cache_set(
+	cache: dict[Any, Any],
+	key: Any,
+	value: Any,
+	*,
+	max_size: int = _DESC_CACHE_MAX,
+) -> None:
+	"""Insert into *cache*, evicting one arbitrary entry when at *max_size*."""
+	if len(cache) >= max_size:
+		cache.pop(next(iter(cache)))
+	cache[key] = value
+
+
+def should_apply_undefined_char_processing(region: Any) -> bool:
+	"""True when ``undefinedCharProcess`` should run on this braille region."""
+	if not getattr(region, "parseUndefinedChars", False):
+		return False
+	cfg = _getUndefinedCharsCfg()
+	return (
+		cfg["method"] != CHOICE_tableBehaviour
+		and len(region.rawText) <= cfg["characterLimit"]
+	)
 
 
 def setUndefinedChar(t: Optional[int] = None) -> None:
@@ -178,11 +219,18 @@ def getExtendedSymbolsForString(s: str, lang: str) -> dict[str, tuple[str, list[
 			lang = "en"
 			extendedSymbols[lang] = getExtendedSymbols(lang)
 	symbols = extendedSymbols[lang]
-	return {
-		c: (d, [(m.start(), m.end() - 1) for m in re.finditer(re.escape(c), s)])
-		for c, d in symbols.items()
-		if c in s
-	}
+	chars_in_s = set(s)
+	out: dict[str, tuple[str, list[tuple[int, int]]]] = {}
+	for c, d in symbols.items():
+		if not c:
+			continue
+		if len(c) == 1:
+			if c not in chars_in_s:
+				continue
+		elif c not in s:
+			continue
+		out[c] = (d, [(m.start(), m.end() - 1) for m in re.finditer(re.escape(c), s)])
+	return out
 
 
 def getAlternativeDescChar(c: str, method: int) -> str:
@@ -196,9 +244,6 @@ def getAlternativeDescChar(c: str, method: int) -> str:
 	return getUndefinedCharSign(method)
 
 
-_DESC_CACHE_MAX = 512
-
-
 def _getDescCharCore(c: str, lang: str, method: int) -> tuple[str, bool]:
 	"""Return (text, use_tags). use_tags=False when using alternative repr (no prefix/suffix)."""
 	key = (c, lang, method)
@@ -207,9 +252,7 @@ def _getDescCharCore(c: str, lang: str, method: int) -> tuple[str, bool]:
 	if _isCharExcludedFromDesc(c):
 		desc = getAlternativeDescChar(c, method)
 		result = (desc, False)
-		if len(_descCharCache) >= _DESC_CACHE_MAX:
-			_descCharCache.pop(next(iter(_descCharCache)))
-		_descCharCache[key] = result
+		_bounded_cache_set(_descCharCache, key, result)
 		return result
 	level = get_symbol_level("SYMLVL_CHAR")
 	desc = characterProcessing.processSpeechSymbols(lang, c, level).strip()
@@ -231,9 +274,7 @@ def _getDescCharCore(c: str, lang: str, method: int) -> tuple[str, bool]:
 			desc = getAlternativeDescChar(c, method)
 			use_tags = False
 	result = (desc, use_tags)
-	if len(_descCharCache) >= _DESC_CACHE_MAX:
-		_descCharCache.pop(next(iter(_descCharCache)))
-	_descCharCache[key] = result
+	_bounded_cache_set(_descCharCache, key, result)
 	return result
 
 
@@ -354,9 +395,7 @@ def undefinedCharProcess(self: Any) -> None:
 		except KeyError:
 			startTag = getTextInBraille(startTagRaw) if startTagRaw else ""
 			endTag = getTextInBraille(endTagRaw) if endTagRaw else ""
-			_brailledTagCache[tagKey] = (startTag, endTag)
-			if len(_brailledTagCache) > 32:
-				_brailledTagCache.pop(next(iter(_brailledTagCache)))
+			_bounded_cache_set(_brailledTagCache, tagKey, (startTag, endTag), max_size=_TAG_CACHE_MAX)
 	replacements = []
 	method = cfg["method"]
 	getReplKw = {"method": method}
@@ -373,10 +412,7 @@ def undefinedCharProcess(self: Any) -> None:
 		excluded_set, excluded_ranges = _getExcludeDesc()
 		for c, v in extendedSymbolsRawText.items():
 			desc, positions = v[0], v[1]
-			excluded = any(
-				ord(ch) in excluded_set or any(s <= ord(ch) <= e for s, e in excluded_ranges)
-				for ch in c
-			)
+			excluded = _extended_glyph_excluded_from_ranges(c, excluded_set, excluded_ranges)
 			if excluded:
 				replaceByBraille = getReplacement(c[0], **getReplKw)
 			else:

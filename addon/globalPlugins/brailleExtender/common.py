@@ -54,10 +54,10 @@ def nvdaVersionAtLeast(year: int, major: int, minor: int = 0) -> bool:
 # NVDA core features (from changelog), used for addon compatibility:
 # - 2022.3: interruptSpeechWhileScrolling (speech interrupt when scrolling)
 # - 2024.4: speakOnRouting (announce character when routing cursor)
-# - 2025.1: speakOnNavigatingByUnit, automatic braille table selection (inputTable/translationTable "auto")
+# - 2025.1: speakOnNavigatingByUnit (NVDA braille), automatic braille table selection (inputTable/translationTable "auto")
+# BrailleExtender speakScroll stays independent; turn off NVDA's "Speak when navigating by line or paragraph" to avoid duplicates.
 NVDA_HAS_INTERRUPT_SPEECH_WHILE_SCROLLING = nvdaVersionAtLeast(2022, 3)
 NVDA_HAS_SPEAK_ON_ROUTING = nvdaVersionAtLeast(2024, 4)
-NVDA_HAS_SPEAK_ON_NAVIGATING_BY_UNIT = nvdaVersionAtLeast(2025, 1)
 NVDA_HAS_AUTOMATIC_BRAILLE_TABLES = nvdaVersionAtLeast(2025, 1)
 
 
@@ -82,6 +82,17 @@ TAG_SEPARATOR = chr(5)
 CHOICE_likeSpeech = '0'
 CHOICE_enabled = '1'
 CHOICE_disabled = '2'
+
+# Bitmasks OR'd onto Liblouis output cells (dots 1–6 occupy bits 0–5; dots 7–8 are the “brlex” overlay).
+BRLEX_DOT7_CELL_MASK = 0x40
+BRLEX_DOT8_CELL_MASK = 0x80
+BRLEX_DOTS78_CELL_MASK = BRLEX_DOT7_CELL_MASK | BRLEX_DOT8_CELL_MASK
+
+BRLEX_CELL_MASK_BY_METHOD: dict[str, int] = {
+	CHOICE_dot7: BRLEX_DOT7_CELL_MASK,
+	CHOICE_dot8: BRLEX_DOT8_CELL_MASK,
+	CHOICE_dots78: BRLEX_DOTS78_CELL_MASK,
+}
 
 REPLACE_TEXT = 0
 INSERT_AFTER = 1

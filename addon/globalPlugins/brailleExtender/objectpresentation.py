@@ -483,7 +483,8 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		self.background = sHelper.addLabeledControl(
 			_("Report background progress bars:"),
 			wx.Choice,
-			choices=[_("like speech"), _("enabled"), _("disabled")]
+			# Translators: Same meaning as in document formatting — follow NVDA's own setting.
+			choices=[_("Handled by NVDA core"), _("enabled"), _("disabled")]
 		)
 		self.background.SetSelection(config.conf["brailleExtender"]["objectPresentation"]["reportBackgroundProgressBars"])
 

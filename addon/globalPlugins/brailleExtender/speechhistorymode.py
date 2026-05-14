@@ -2,45 +2,49 @@
 # speechhistorymode.py
 # Part of BrailleExtender addon for NVDA
 # Copyright 2021-2023 Emil Hesmyr, André-Abush Clause, released under GPL.
+
+from __future__ import annotations
+
+from typing import Any, Callable
+
+import addonHandler
+import api
 import braille
 import config
-import speech
-import api
-import ui
 import gui
+import speech
+import ui
 import wx
-import addonHandler
-import globalCommands
 from logHandler import log
 
 addonHandler.initTranslation()
+
 TETHER_SPEECH = "speech"
 
-class SettingsDlg(gui.settingsDialogs.SettingsPanel):
+_orig_speak: Callable[..., Any] | None = None
+_orig_scroll_back: Callable[..., Any] | None = None
+_orig_scroll_forward: Callable[..., Any] | None = None
+_orig_braille_message: Callable[..., Any] | None = None
+_installed = False
 
+
+class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 	# Translators: title of a dialog.
 	title = _("Speech History Mode")
 
 	def makeSettings(self, settingsSizer):
-
 		sHelper = gui.guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
-
-		# Translators: label of a dialog.
 		label = _("&Number of last announcements to retain:")
 		self.limit = sHelper.addLabeledControl(
 			label,
 			gui.nvdaControls.SelectOnFocusSpinCtrl,
 			min=0,
 			max=1000000,
-			initial=config.conf["brailleExtender"]["speechHistoryMode"]["limit"]
+			initial=config.conf["brailleExtender"]["speechHistoryMode"]["limit"],
 		)
-
-		# Translators: label of a dialog.
 		label = _("&Prefix entries with their position in the history")
 		self.numberEntries = sHelper.addItem(wx.CheckBox(self, label=label))
 		self.numberEntries.SetValue(config.conf["brailleExtender"]["speechHistoryMode"]["numberEntries"])
-
-		# Translators: label of a dialog.
 		label = _("&Read entries while browsing history")
 		self.speakEntries = sHelper.addItem(wx.CheckBox(self, label=label))
 		self.speakEntries.SetValue(config.conf["brailleExtender"]["speechHistoryMode"]["speakEntries"])
@@ -51,108 +55,150 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		config.conf["brailleExtender"]["speechHistoryMode"]["speakEntries"] = self.speakEntries.IsChecked()
 
 
-orig_speak = speech.speech.speak
+speechList: list[str] = []
+speechListIndex = 0
 
 
-def showSpeech(index, allowReadEntry=False):
+def showSpeech(index: int, allowReadEntry: bool = False) -> None:
 	try:
 		if braille.handler.getTether() == TETHER_SPEECH:
 			text = speechList[index]
 			if config.conf["brailleExtender"]["speechHistoryMode"]["numberEntries"]:
 				size_limit = len(str(config.conf["brailleExtender"]["speechHistoryMode"]["limit"]))
-				text = f"#%.{size_limit}d:{text}" % (index+1)
+				text = f"#%.{size_limit}d:{text}" % (index + 1)
 			region = braille.TextRegion(text)
 			region.update()
 			region.obj = None
 			braille.handler._doNewObject([region])
 			if allowReadEntry and config.conf["brailleExtender"]["speechHistoryMode"]["speakEntries"]:
 				speech.cancelSpeech()
-				speak([speechList[index]], saveString=False)
-	except BaseException:
-		pass
+				speak_wrapped([speechList[index]], saveString=False)
+	except Exception:
+		log.debugWarning("Speech history: showSpeech failed", exc_info=True)
 
 
-speechList = []
-index = 0
-
-def speak(
-	speechSequence,
-	saveString=True,
-	allowReadEntry=False,
-	*args,
-	**kwargs
-):
-	orig_speak(speechSequence, *args, **kwargs)
-	if not saveString: return
-	string = ""
-	for i in speechSequence:
-		if isinstance(i, str):
-			string += i
-			if not speechSequence.index(i) == len(speechSequence) - 1:
-				string += " "
-	global speechList, index
-	speechList.append(string)
-	speechList = speechList[-config.conf["brailleExtender"]["speechHistoryMode"]["limit"]:]
-	index = len(speechList) - 1
-	showSpeech(index, allowReadEntry=allowReadEntry)
-
-speech.speech.speak = speak
-if hasattr(speech, "speak"):
-	speech.speak = speak
+def speak_wrapped(
+	speechSequence: Any,
+	saveString: bool = True,
+	allowReadEntry: bool = False,
+	*args: Any,
+	**kwargs: Any,
+) -> None:
+	assert _orig_speak is not None
+	_orig_speak(speechSequence, *args, **kwargs)
+	if not saveString:
+		return
+	parts: list[str] = []
+	for item in speechSequence:
+		if isinstance(item, str):
+			parts.append(item)
+	joined = " ".join(parts)
+	global speechList, speechListIndex
+	speechList.append(joined)
+	limit = config.conf["brailleExtender"]["speechHistoryMode"]["limit"]
+	speechList = speechList[-limit:]
+	speechListIndex = len(speechList) - 1
+	showSpeech(speechListIndex, allowReadEntry=allowReadEntry)
 
 
-def scrollBack(self):
-	windowRawText = braille.handler.mainBuffer.windowRawText
-	windowEndPos = braille.handler.buffer.windowEndPos
-	orig_ScrollBack(self)
-	if braille.handler.buffer == braille.handler.mainBuffer and braille.handler.getTether(
-	) == TETHER_SPEECH and braille.handler.buffer.windowRawText == windowRawText and braille.handler.buffer.windowEndPos == windowEndPos:
-		global index
-		if index > 0:
-			index -= 1
-		showSpeech(index, allowReadEntry=True)
+def scrollBack(self: Any) -> None:
+	assert _orig_scroll_back is not None
+	window_raw_text = braille.handler.mainBuffer.windowRawText
+	window_end_pos = braille.handler.buffer.windowEndPos
+	_orig_scroll_back(self)
+	if (
+		braille.handler.buffer is braille.handler.mainBuffer
+		and braille.handler.getTether() == TETHER_SPEECH
+		and braille.handler.buffer.windowRawText == window_raw_text
+		and braille.handler.buffer.windowEndPos == window_end_pos
+	):
+		global speechListIndex
+		if speechListIndex > 0:
+			speechListIndex -= 1
+		showSpeech(speechListIndex, allowReadEntry=True)
 
 
-def scrollForward(self):
-	windowRawText = braille.handler.mainBuffer.windowRawText
-	windowEndPos = braille.handler.buffer.windowEndPos
-	orig_ScrollForward(self)
-	if braille.handler.buffer == braille.handler.mainBuffer and braille.handler.getTether(
-	) == TETHER_SPEECH and braille.handler.buffer.windowRawText == windowRawText and braille.handler.buffer.windowEndPos == windowEndPos:
-		global index
-		if not index >= len(speechList) - 1:
-			index += 1
-			showSpeech(index, allowReadEntry=True)
+def scrollForward(self: Any) -> None:
+	assert _orig_scroll_forward is not None
+	window_raw_text = braille.handler.mainBuffer.windowRawText
+	window_end_pos = braille.handler.buffer.windowEndPos
+	_orig_scroll_forward(self)
+	if (
+		braille.handler.buffer is braille.handler.mainBuffer
+		and braille.handler.getTether() == TETHER_SPEECH
+		and braille.handler.buffer.windowRawText == window_raw_text
+		and braille.handler.buffer.windowEndPos == window_end_pos
+	):
+		global speechListIndex
+		if speechListIndex < len(speechList) - 1:
+			speechListIndex += 1
+			showSpeech(speechListIndex, allowReadEntry=True)
 
 
-def newBrailleMessage(self, *args, **kwargs):
+def new_braille_message(self: Any, *args: Any, **kwargs: Any) -> None:
+	assert _orig_braille_message is not None
 	if braille.handler.getTether() != TETHER_SPEECH:
-		orig_BrailleMessage(self, *args, **kwargs)
+		_orig_braille_message(self, *args, **kwargs)
 
 
-def showSpeechFromRoutingIndex(routingNumber):
-	global index
-	if not routingNumber:
-		api.copyToClip(speechList[index])
-		speak([_("Announcement copied to clipboard")], saveString=False)
-	elif routingNumber == braille.handler.displaySize - 1:
-		ui.browseableMessage(speechList[index])
+def showSpeechFromRoutingIndex(routing_number: int) -> None:
+	global speechListIndex
+	if not routing_number:
+		api.copyToClip(speechList[speechListIndex])
+		speak_wrapped([_("Announcement copied to clipboard")], saveString=False)
+	elif routing_number == braille.handler.displaySize - 1:
+		ui.browseableMessage(speechList[speechListIndex])
 	else:
-		direction = routingNumber + 1 > braille.handler.displaySize / 2
+		direction = routing_number + 1 > braille.handler.displaySize / 2
 		if direction:
-			index = index - (braille.handler.displaySize - routingNumber) + 1
+			speechListIndex = speechListIndex - (braille.handler.displaySize - routing_number) + 1
 		else:
-			index += routingNumber
-		if index < 0:
-			index = 0
-		if index >= len(speechList):
-			index = len(speechList) - 1
-	showSpeech(index, allowReadEntry=True)
+			speechListIndex += routing_number
+		speechListIndex = max(0, min(speechListIndex, len(speechList) - 1))
+	showSpeech(speechListIndex, allowReadEntry=True)
 
 
-orig_ScrollBack = braille.BrailleBuffer.scrollBack
-braille.BrailleBuffer.scrollBack = scrollBack
-orig_BrailleMessage = braille.BrailleHandler.message
-braille.BrailleHandler.message = newBrailleMessage
-orig_ScrollForward = braille.BrailleBuffer.scrollForward
-braille.BrailleBuffer.scrollForward = scrollForward
+def install() -> None:
+	"""Apply speech history monkey-patches (idempotent)."""
+	global _installed, _orig_speak, _orig_scroll_back, _orig_scroll_forward, _orig_braille_message
+	if _installed:
+		return
+	_orig_speak = speech.speech.speak
+	_orig_scroll_back = braille.BrailleBuffer.scrollBack
+	_orig_scroll_forward = braille.BrailleBuffer.scrollForward
+	_orig_braille_message = braille.BrailleHandler.message
+	speech.speech.speak = speak_wrapped
+	if hasattr(speech, "speak"):
+		speech.speak = speak_wrapped
+	braille.BrailleBuffer.scrollBack = scrollBack
+	braille.BrailleBuffer.scrollForward = scrollForward
+	braille.BrailleHandler.message = new_braille_message
+	_installed = True
+	log.debug("BrailleExtender: speech history mode patches installed")
+
+
+def uninstall() -> None:
+	"""Restore speech and braille hooks from install(). Safe if not installed."""
+	global _installed, _orig_speak, _orig_scroll_back, _orig_scroll_forward, _orig_braille_message
+	if not _installed:
+		return
+	try:
+		if _orig_speak is not None:
+			speech.speech.speak = _orig_speak
+			if hasattr(speech, "speak"):
+				speech.speak = _orig_speak
+		if _orig_scroll_back is not None:
+			braille.BrailleBuffer.scrollBack = _orig_scroll_back
+		if _orig_scroll_forward is not None:
+			braille.BrailleBuffer.scrollForward = _orig_scroll_forward
+		if _orig_braille_message is not None:
+			braille.BrailleHandler.message = _orig_braille_message
+	except Exception:
+		log.warning("BrailleExtender: error restoring speech history patches", exc_info=True)
+	_orig_speak = _orig_scroll_back = _orig_scroll_forward = _orig_braille_message = None
+	_installed = False
+	log.debug("BrailleExtender: speech history mode patches uninstalled")
+
+
+def is_installed() -> bool:
+	return _installed

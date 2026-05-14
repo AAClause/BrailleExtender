@@ -24,8 +24,8 @@ from . import addoncfg
 from . import utils
 from .advancedinput import SettingsDlg as AdvancedInputModeDlg
 from .common import (
-	addonName, punctuationSeparator, RC_NORMAL,
-	NVDA_HAS_INTERRUPT_SPEECH_WHILE_SCROLLING, NVDA_HAS_SPEAK_ON_ROUTING, NVDA_HAS_SPEAK_ON_NAVIGATING_BY_UNIT,
+	addonName, punctuationSeparator, RC_NORMAL, nvdaVersionAtLeast,
+	NVDA_HAS_INTERRUPT_SPEECH_WHILE_SCROLLING, NVDA_HAS_SPEAK_ON_ROUTING,
 )
 from .autoscroll import SettingsDlg as AutoScrollDlg
 from .documentformatting import SettingsDlg as DocumentFormattingDlg
@@ -74,9 +74,14 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 		# Translators: label of a dialog.
 		self.speakScroll = sHelper.addLabeledControl(_("Say current line while &scrolling in:"), wx.Choice, choices=list(addoncfg.focusOrReviewChoices.values()))
 		self.speakScroll.SetSelection(list(addoncfg.focusOrReviewChoices.keys()).index(config.conf["brailleExtender"]["speakScroll"]))
-		if NVDA_HAS_SPEAK_ON_NAVIGATING_BY_UNIT:
-			self.speakScroll.Enable(False)
-			sHelper.addItem(wx.StaticText(self, label=_("Use NVDA Braille settings → \"Speak when navigating by line or paragraph\" (since 2025.1)")))
+		if nvdaVersionAtLeast(2025, 1):
+			sHelper.addItem(wx.StaticText(
+				self,
+				label=_(
+					"NVDA 2025.1+ also has a global braille option, “Speak when navigating by line or paragraph”. "
+					"Disable that NVDA option if you hear duplicate line announcements."
+				),
+			))
 
 		# Translators: label of a dialog.
 		self.stopSpeechScroll = sHelper.addItem(wx.CheckBox(self, label=_("Speech &interrupt when scrolling on same line")))

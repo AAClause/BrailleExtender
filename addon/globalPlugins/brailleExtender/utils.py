@@ -389,6 +389,23 @@ def get_output_reason(reason_name):
 		raise AttributeError("Reason \"%s\" unknown" % reason_name)
 
 
+def is_braille_unicode_normalization_enabled() -> bool:
+	"""Whether NVDA's braille Unicode normalization feature is active (2025.2+ / 2026.x).
+
+	When True, Region.update normalizes text before liblouis translation and remaps offsets.
+	"""
+	try:
+		value = config.conf["braille"]["unicodeNormalization"]
+	except (KeyError, LookupError, AttributeError, TypeError):
+		return False
+	if hasattr(value, "calculated"):
+		try:
+			return bool(value.calculated())
+		except Exception:
+			return bool(value)
+	return bool(value)
+
+
 def get_speech_mode():
 	if hasattr(speech, "getState"):
 		return speech.getState().speechMode

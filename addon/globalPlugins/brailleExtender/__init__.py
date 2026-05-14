@@ -45,8 +45,7 @@ from . import undefinedchars
 from . import updatecheck
 from . import utils
 from .common import (addonName, addonURL, addonVersion, punctuationSeparator,
-	RC_NORMAL, RC_EMULATE_ARROWS_BEEP, RC_EMULATE_ARROWS_SILENT,
-	NVDA_HAS_SPEAK_ON_NAVIGATING_BY_UNIT)
+	RC_NORMAL, RC_EMULATE_ARROWS_BEEP, RC_EMULATE_ARROWS_SILENT)
 
 addonHandler.initTranslation()
 
@@ -563,9 +562,6 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	script_toggle_plain_text.__doc__ = _("Toggle plain text mode")
 
 	def script_toggleSpeechScrollFocusMode(self, gesture):
-		if NVDA_HAS_SPEAK_ON_NAVIGATING_BY_UNIT:
-			ui.message(_("Use NVDA Braille settings: \"Speak when navigating by line or paragraph\" (since 2025.1)"))
-			return
 		choices = addoncfg.focusOrReviewChoices
 		curChoice = config.conf["brailleExtender"]["speakScroll"]
 		curChoiceID = list(choices.keys()).index(curChoice)

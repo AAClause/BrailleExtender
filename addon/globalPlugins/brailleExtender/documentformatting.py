@@ -1,8 +1,11 @@
 # coding: utf-8
+from __future__ import annotations
+
 # documentformatting.py
 # Part of BrailleExtender addon for NVDA
 # Copyright 2016-2020 André-Abush CLAUSE, released under GPL.
 from collections import namedtuple
+from typing import Any
 
 import addonHandler
 import braille
@@ -17,6 +20,7 @@ from logHandler import log
 from . import regionhelper
 from .common import (
 	N_,
+	BRLEX_CELL_MASK_BY_METHOD,
 	CHOICE_none,
 	CHOICE_dot7,
 	CHOICE_dot8,
@@ -31,6 +35,36 @@ from .common import (
 )
 
 addonHandler.initTranslation()
+
+# Attributes read from each format-change field when building Liblouis flags and dot-7/8 overlays.
+_FORMAT_CHANGE_TYPEFORM_ATTRS: tuple[str, ...] = (
+	"bold",
+	"italic",
+	"underline",
+	"strikethrough",
+	"strong",
+	"emphasised",
+	"marked",
+	"text-position",
+	"invalid-spelling",
+	"invalid-grammar",
+)
+
+_LIBLOUIS_FLAGS_BY_ATTR: dict[str, int] = {
+	"bold": louis.bold,
+	"italic": louis.italic,
+	"underline": louis.underline,
+	"strong": louis.bold,
+	"emphasised": louis.italic,
+	"marked": louis.underline,
+}
+
+_NVDA_MANAGED_SPELLING_ATTRS: frozenset[str] = frozenset(("invalid-spelling", "invalid-grammar"))
+_NVDA_MANAGED_CLASSIC_FONT_ATTRS: frozenset[str] = frozenset(
+	("bold", "italic", "underline", "strikethrough")
+)
+_NVDA_SEMANTIC_EMPHASIS_ATTRS: frozenset[str] = frozenset(("strong", "emphasised"))
+_NVDA_SEMANTIC_MARK_ATTRS: frozenset[str] = frozenset(("marked",))
 
 CHOICES_LABELS = {
 	CHOICE_none: _("nothing"),
@@ -48,6 +82,9 @@ LABELS_FORMATTING = {
 	"italic": _("italic"),
 	"underline": _("underline"),
 	"strikethrough": _("strikethrough"),
+	"strong": _("strong emphasis"),
+	"emphasised": _("emphasised text"),
+	"marked": _("marked (highlighted)"),
 	"text-position:sub": _("subscript"),
 	"text-position:super": _("superscript"),
 	"invalid-spelling": _("spelling errors"),
@@ -64,7 +101,8 @@ LABELS_FORMATTING = {
 }
 
 LABELS_STATES = {
-	CHOICE_likeSpeech: _("like speech"),
+	# Translators: Document formatting option — follow NVDA's own settings for each report row (native braille markers when NVDA defines them for that attribute; otherwise NVDA speech/format flags still apply, with add-on presentation only where the core exposes no separate braille symbol).
+	CHOICE_likeSpeech: _("Handled by NVDA core"),
 	CHOICE_enabled: _("enabled"),
 	CHOICE_disabled: _("disabled"),
 }
@@ -106,12 +144,60 @@ logTextInfo = False
 conf = config.conf["brailleExtender"]["documentFormatting"]
 
 
-def normalize_report_key(key):
+def normalize_report_key(key: str) -> str | None:
+	"""Map add-on report ids to keys present in NVDA ``documentFormatting``."""
+	aliases = {
+		"fontAttributes": ("fontAttributeReporting",),
+		"spellingErrors": ("reportSpellingErrors2", "reportSpellingErrors"),
+		"emphasis": ("reportEmphasis",),
+		"highlight": ("reportHighlight",),
+	}
+	if key in aliases:
+		for candidate in aliases[key]:
+			if candidate in config.conf["documentFormatting"]:
+				return candidate
 	key_ = "report" + key[0].upper() + key[1:]
 	if key_ in config.conf["documentFormatting"]:
 		return key_
 	if key_ == "reportFontAttributes":
 		return "fontAttributeReporting"
+	return None
+
+
+def format_config_indicates_spelling_braille(formatConfig: dict[str, Any] | None) -> bool:
+	"""True when NVDA format flags request spelling/grammar indication in braille (bitmask or legacy bool)."""
+	if not formatConfig:
+		return False
+	val = formatConfig.get("reportSpellingErrors2")
+	if val is None:
+		val = formatConfig.get("reportSpellingErrors")
+	if val is None:
+		return False
+	if isinstance(val, bool):
+		return val
+	try:
+		from config.configFlags import ReportSpellingErrors
+
+		return (int(val) & int(ReportSpellingErrors.BRAILLE)) != 0
+	except (TypeError, ValueError, AttributeError, ImportError):
+		return bool(val)
+
+
+def format_config_font_attributes_report_braille(formatConfig: dict[str, Any] | None) -> bool:
+	"""True when NVDA requests font attribute information in braille (bitmask or legacy bool)."""
+	if not formatConfig:
+		return False
+	raw_flag = formatConfig.get("fontAttributeReporting")
+	if raw_flag is None:
+		return bool(formatConfig.get("reportFontAttributes", False))
+	try:
+		from config.configFlags import OutputMode
+
+		if isinstance(raw_flag, int):
+			return (raw_flag & int(OutputMode.BRAILLE)) != 0
+		return bool(raw_flag & OutputMode.BRAILLE)
+	except (ImportError, TypeError, ValueError, AttributeError):
+		return raw_flag == 1 or raw_flag is True
 
 
 def get_report(key, simple=True):
@@ -178,57 +264,70 @@ def report_formatting(report):
 def get_method(k):
 	l = [k]
 	if ':' in k:
-		k = l.append(k.split(':')[0])
+		l.append(k.split(':', 1)[0])
 	for e in l:
 		if e in conf["methods"]:
 			return conf["methods"][e]
 	return CHOICE_none
 
 
-def get_liblouis_typeform(typeform):
-	typeforms = {
-		"bold": louis.bold,
-		"italic": louis.italic,
-		"underline": louis.underline
-	}
-	return typeforms[typeform] if typeform in typeforms else louis.plain_text
-
-
-def get_brlex_typeform(k, v):
-	dot7 = 64
-	dot8 = 128
-	typeform = 0
-	method = get_method(k)
-	if method == CHOICE_dot7:
-		typeform = dot7
-	elif method == CHOICE_dot8:
-		typeform = dot8
-	elif method == CHOICE_dots78:
-		typeform = dot7 | dot8
-	return typeform
+def get_liblouis_typeform(attr_name: str) -> int:
+	return _LIBLOUIS_FLAGS_BY_ATTR.get(attr_name, louis.plain_text)
 
 
 def decorator(fn, s):
 	def _getTypeformFromFormatField(self, field, formatConfig=None):
-		if not get_report("fontAttributes"):
-			return 0, 0
-		l = [
-			"bold", "italic", "underline", "strikethrough",
-			"text-position", "invalid-spelling", "invalid-grammar"
-		]
-		liblouis_typeform = louis.plain_text
-		brlex_typeform = 0
-		for k in l:
-			v = field.get(k, False)
-			if v:
-				if isinstance(v, bool):
-					v = '1'
-				method = get_method(f"{k}:{v}")
-				if method == CHOICE_liblouis:
-					liblouis_typeform |= get_liblouis_typeform(k)
-				elif method in [CHOICE_dots78, CHOICE_dot7, CHOICE_dot8]:
-					brlex_typeform |= get_brlex_typeform(k, v)
-		return liblouis_typeform, brlex_typeform
+		if formatConfig is None:
+			formatConfig = {}
+		spell_attrs_delegated_to_nvda = (
+			get_report("spellingErrors", simple=False) == CHOICE_likeSpeech
+			and format_config_indicates_spelling_braille(formatConfig)
+		)
+		classic_font_attrs_delegated_to_nvda = (
+			get_report("fontAttributes", simple=False) == CHOICE_likeSpeech
+			and format_config_font_attributes_report_braille(formatConfig)
+		)
+		semantic_emphasis_delegated_to_nvda = (
+			get_report("emphasis", simple=False) == CHOICE_likeSpeech
+			and bool(formatConfig.get("reportEmphasis", False))
+		)
+		semantic_highlight_delegated_to_nvda = (
+			get_report("highlight", simple=False) == CHOICE_likeSpeech
+			and bool(formatConfig.get("reportHighlight", False))
+		)
+		nvda_format_markers = getattr(braille, "fontAttributeFormattingMarkers", None) or {}
+		louis_typeform_flags = louis.plain_text
+		extra_dots_cell_mask = 0
+		for attr_name in _FORMAT_CHANGE_TYPEFORM_ATTRS:
+			if spell_attrs_delegated_to_nvda and attr_name in _NVDA_MANAGED_SPELLING_ATTRS:
+				continue
+			if classic_font_attrs_delegated_to_nvda and attr_name in _NVDA_MANAGED_CLASSIC_FONT_ATTRS:
+				continue
+			if (
+				semantic_emphasis_delegated_to_nvda
+				and attr_name in _NVDA_SEMANTIC_EMPHASIS_ATTRS
+				and attr_name in nvda_format_markers
+			):
+				continue
+			if (
+				semantic_highlight_delegated_to_nvda
+				and attr_name in _NVDA_SEMANTIC_MARK_ATTRS
+				and "marked" in nvda_format_markers
+			):
+				continue
+			attr_value = field.get(attr_name, False)
+			if not attr_value:
+				continue
+			if isinstance(attr_value, bool):
+				attr_value = "1"
+			presentation_method = get_method(f"{attr_name}:{attr_value}")
+			if presentation_method == CHOICE_liblouis:
+				louis_typeform_flags |= get_liblouis_typeform(attr_name)
+			else:
+				overlay = BRLEX_CELL_MASK_BY_METHOD.get(presentation_method, 0)
+				if overlay:
+					extra_dots_cell_mask |= overlay
+		return louis_typeform_flags, extra_dots_cell_mask
 
 	def addTextWithFields_edit(self, info, formatConfig, isSelection=False):
 		formatConfig_ = formatConfig.copy()
@@ -301,17 +400,16 @@ def decorator(fn, s):
 						regionhelper.BrailleCellReplacement(start=0, insertBefore=s))
 		if postReplacements:
 			regionhelper.replaceBrailleCells(self, postReplacements)
-		if any(self.brlex_typeforms):
-			brlex_typeforms = self.brlex_typeforms
-			lastTypeform = 0
-			for pos in range(len(self.rawText)):
-				if pos in brlex_typeforms:
-					lastTypeform = brlex_typeforms[pos]
-				if lastTypeform:
-					start, end = regionhelper.getBraillePosFromRawPos(
-						self, pos)
-					for pos_ in range(start, end + 1):
-						self.brailleCells[pos_] |= lastTypeform
+		if self.brlex_typeforms:
+			cell_masks_by_raw_pos = self.brlex_typeforms
+			active_cell_mask = 0
+			for raw_pos in range(len(self.rawText)):
+				if raw_pos in cell_masks_by_raw_pos:
+					active_cell_mask = cell_masks_by_raw_pos[raw_pos]
+				if active_cell_mask:
+					start_braille, end_braille = regionhelper.getBraillePosFromRawPos(self, raw_pos)
+					for braille_pos in range(start_braille, end_braille + 1):
+						self.brailleCells[braille_pos] |= active_cell_mask
 
 	if s == "addTextWithFields":
 		return addTextWithFields_edit
@@ -400,6 +498,18 @@ class ManageMethods(wx.Dialog):
 			_("Strike&through:"), wx.Choice, choices=choices
 		)
 		self.strikethrough.SetSelection(self.getItemToSelect("strikethrough"))
+		self.strong = sHelper.addLabeledControl(
+			_("Strong e&mphasis:"), wx.Choice, choices=choices
+		)
+		self.strong.SetSelection(self.getItemToSelect("strong"))
+		self.emphasised = sHelper.addLabeledControl(
+			_("E&mphasised text:"), wx.Choice, choices=choices
+		)
+		self.emphasised.SetSelection(self.getItemToSelect("emphasised"))
+		self.marked = sHelper.addLabeledControl(
+			_("Mar&ked (highlighted):"), wx.Choice, choices=choices
+		)
+		self.marked.SetSelection(self.getItemToSelect("marked"))
 		self.sub = sHelper.addLabeledControl(
 			_("Su&bscripts:"), wx.Choice, choices=choices
 		)
@@ -449,6 +559,15 @@ class ManageMethods(wx.Dialog):
 		conf["methods"]["strikethrough"] = list(
 			CHOICES_LABELS.keys()
 		)[self.strikethrough.GetSelection()]
+		conf["methods"]["strong"] = list(
+			CHOICES_LABELS.keys()
+		)[self.strong.GetSelection()]
+		conf["methods"]["emphasised"] = list(
+			CHOICES_LABELS.keys()
+		)[self.emphasised.GetSelection()]
+		conf["methods"]["marked"] = list(
+			CHOICES_LABELS.keys()
+		)[self.marked.GetSelection()]
 		conf["methods"]["text-position:sub"] = list(
 			CHOICES_LABELS.keys()
 		)[self.sub.GetSelection()]
