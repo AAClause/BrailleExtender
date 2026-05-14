@@ -465,6 +465,58 @@ def _spelling_errors_show_in_braille(format_config: dict[str, Any]) -> bool:
 	return format_config_indicates_spelling_braille(format_config)
 
 
+_IA2_NORMALIZE_HINT_KEYS: frozenset[str] = frozenset(
+	{
+		"font-weight",
+		"font-style",
+		"invalid",
+		"text-underline-style",
+		"text-underline-type",
+		"text-line-through-style",
+		"text-line-through-type",
+		"text-indent",
+		"mark",
+	}
+)
+
+
+def _prepare_format_field_for_braille(field: dict[str, Any]) -> None:
+	"""Map raw IA2-style keys to NVDA canonical format fields (bold, invalid-spelling, …).
+
+	``normalizeIA2TextFormatField`` is only run when IA2-like keys are present so we do not inject
+	default ``text-position`` on unrelated providers.
+	"""
+	if not isinstance(field, dict) or not field:
+		return
+	inv = field.get("invalid")
+	if isinstance(inv, str):
+		for token in re.split(r"[\s,]+", inv.strip().lower()):
+			if token == "spelling":
+				field["invalid-spelling"] = True
+			elif token == "grammar":
+				field["invalid-grammar"] = True
+	if not any(k in field for k in _IA2_NORMALIZE_HINT_KEYS):
+		return
+	try:
+		from NVDAObjects.IAccessible import normalizeIA2TextFormatField
+
+		normalizeIA2TextFormatField(field)
+	except Exception:
+		log.debugWarning("BrailleExtender: normalizeIA2TextFormatField failed", exc_info=True)
+
+
+def _text_position_matches_bucket(raw: Any, want: str) -> bool:
+	"""True when ``raw`` represents subscript (want=sub) or superscript (want=super)."""
+	if raw is None or raw is False:
+		return False
+	label = str(getattr(raw, "name", raw)).lower()
+	if want == "sub":
+		return "sub" in label
+	if want == "super":
+		return "super" in label
+	return want in label
+
+
 def _try_append_nvda_core_formatting_markers(
 	field: dict[str, Any],
 	fieldCache: dict[str, Any] | None,
@@ -475,12 +527,13 @@ def _try_append_nvda_core_formatting_markers(
 ) -> bool:
 	"""Use NVDA's ``fontAttributeFormattingMarkers`` / ``_appendFormattingMarker`` when available.
 
-	When this returns ``True``, the NVDA API was present: BrailleExtender must not add its own tag/dots
-	overlays for keys delegated to NVDA (classic font attrs, semantic emphasis/highlight when present in
-	NVDA's marker table, and/or spelling), even if the chunk is empty.
+	When this returns ``True``, NVDA appended non-empty marker text: BrailleExtender must not add its own
+	tag/dots overlays for keys delegated to NVDA (classic font attrs, semantic emphasis/highlight when
+	present in NVDA's marker table, and/or spelling).
 
-	When this returns ``False``, the API is missing (older NVDA): callers should fall back to add-on tags
-	for any category the user set to *Handled by NVDA core*.
+	When this returns ``False``, NVDA did not emit markers for this chunk: either the API is missing
+	(older NVDA), nothing is delegated to NVDA (add-on tags/dots for all attributes), or eligible markers
+	produced no output. Callers may then fall back to add-on tags for *Handled by NVDA core*.
 	"""
 	markers = getattr(braille, "fontAttributeFormattingMarkers", None)
 	append_fn = getattr(braille, "_appendFormattingMarker", None)
@@ -512,7 +565,7 @@ def _try_append_nvda_core_formatting_markers(
 	if highlight_follows_nvda and "marked" in markers:
 		eligible.add("marked")
 	if not eligible:
-		return True
+		return False
 	parts: list[str] = []
 	for key, marker in markers.items():
 		if key not in eligible:
@@ -532,7 +585,9 @@ def _try_append_nvda_core_formatting_markers(
 				"BrailleExtender: NVDA _appendFormattingMarker failed for %s", key, exc_info=True
 			)
 	if not parts:
-		return True
+		# NVDA did not emit any markers; allow ``getFormatFieldBraille`` fallbacks (e.g. tags when
+		# attributes are delegated to NVDA core but markers are empty).
+		return False
 	chunk = "".join(parts)
 	try:
 		ffd = config.conf["braille"]["fontFormattingDisplay"].calculated()
@@ -788,29 +843,34 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 			]
 
 	def _apply_format_tag_names(name_tags: list[str]) -> None:
+		"""Emit start/end tag cells like NVDA ``_appendFormattingMarker`` (truthy on / falsy off)."""
 		for name_tag in name_tags:
 			if name_tag.startswith("text-position:"):
-				name_field = "text-position"
-				value_field = name_tag.split(":", 1)[1]
-			else:
-				parts = name_tag.split(":", 1)
-				name_field = parts[0]
-				value_field = parts[1] if len(parts) > 1 else None
-			field_value = field.get(name_field)
-			old_field_value = fieldCache.get(name_field) if fieldCache else None
-			tag = get_tags(f"{name_field}:{field_value}") if field_value not in (None, False) else get_tags(name_field)
-			if tag is None and field_value not in (None, False):
-				tag = get_tags(name_field)
-			old_tag = (
-				get_tags(f"{name_field}:{old_field_value}")
-				if old_field_value not in (None, False)
-				else get_tags(name_field)
-			)
-			if value_field != old_field_value and old_tag and old_field_value:
-				if old_field_value != field_value:
-					end_tag_list.append(old_tag.end)
-			if field_value and tag and field_value != value_field and field_value != old_field_value:
+				want = name_tag.split(":", 1)[1]
+				new_val = field.get("text-position")
+				old_val = fieldCache.get("text-position") if fieldCache is not None else None
+				tag = get_tags(name_tag) or get_tags("text-position")
+				if not tag:
+					continue
+				if _text_position_matches_bucket(new_val, want) and not _text_position_matches_bucket(
+					old_val, want
+				):
+					start_tag_list.append(tag.start)
+				elif _text_position_matches_bucket(old_val, want) and not _text_position_matches_bucket(
+					new_val, want
+				):
+					end_tag_list.append(tag.end)
+				continue
+			name_field = name_tag.split(":", 1)[0]
+			new_val = field.get(name_field, False)
+			old_val = fieldCache.get(name_field, False) if fieldCache is not None else False
+			tag = get_tags(name_field)
+			if not tag:
+				continue
+			if new_val and not old_val:
 				start_tag_list.append(tag.start)
+			elif old_val and not new_val:
+				end_tag_list.append(tag.end)
 
 	_apply_format_tag_names(tags)
 	nvda_marker_api_ok = _try_append_nvda_core_formatting_markers(
@@ -901,6 +961,8 @@ def _addTextWithFields(self, info: textInfos.TextInfo, formatConfig: dict[str, A
 			cmd = command.command
 			field = command.field
 			if cmd == "formatChange":
+				if isinstance(field, dict):
+					_prepare_format_field_for_braille(field)
 				typeform, brlex_typeform = self._getTypeformFromFormatField(
 					field, formatConfig)
 				text = getFormatFieldBraille(

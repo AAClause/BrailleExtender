@@ -193,6 +193,10 @@ def format_config_font_attributes_report_braille(formatConfig: dict[str, Any] | 
 	try:
 		from config.configFlags import OutputMode
 
+		# ``addTextWithFields_edit`` may set ``fontAttributeReporting`` to ``True`` when the add-on
+		# report row is "enabled"; ``True & OutputMode.BRAILLE`` is wrong when the braille bit is not 1.
+		if isinstance(raw_flag, bool):
+			return raw_flag
 		if isinstance(raw_flag, int):
 			return (raw_flag & int(OutputMode.BRAILLE)) != 0
 		return bool(raw_flag & OutputMode.BRAILLE)
@@ -334,7 +338,22 @@ def decorator(fn, s):
 		keysToEnable = []
 		for e in LABELS_REPORTS.keys():
 			normalized_key = normalize_report_key(e)
-			if normalized_key:
+			if not normalized_key:
+				continue
+			addon_row = conf["reports"].get(e)
+			if addon_row == CHOICE_enabled and normalized_key == "fontAttributeReporting":
+				try:
+					from config.configFlags import OutputMode
+
+					prev = formatConfig_.get(normalized_key)
+					mask = int(OutputMode.SPEECH) | int(OutputMode.BRAILLE)
+					if isinstance(prev, int):
+						formatConfig_[normalized_key] = prev | mask
+					else:
+						formatConfig_[normalized_key] = mask
+				except Exception:
+					formatConfig_[normalized_key] = True
+			else:
 				formatConfig_[normalized_key] = get_report(e)
 		textInfo_ = info.getTextWithFields(formatConfig_)
 		formatField = textInfos.FormatField()
