@@ -18,6 +18,7 @@ import braille
 import brailleInput
 import colors
 import config
+import controlTypes
 import core
 import globalCommands
 import inputCore
@@ -57,7 +58,6 @@ from . import undefinedchars
 from .common import (
 	baseDir,
 	BRLEX_CELL_MASK_BY_METHOD,
-	CHOICE_likeSpeech,
 	CHOICE_tags,
 	IS_CURRENT_NO,
 	RC_EMULATE_ARROWS_BEEP,
@@ -74,6 +74,8 @@ from .documentformatting import (
 	N_,
 	normalizeTextAlign,
 	normalize_report_key,
+	report_row_follows_nvda,
+	use_be_format_field_chrome,
 )
 from .objectpresentation import getPropertiesBraille, selectedElementEnabled, update_NVDAObjectRegion
 from .onehand import process as processOneHandMode
@@ -533,26 +535,27 @@ def _try_append_nvda_core_formatting_markers(
 
 	When this returns ``False``, NVDA did not emit markers for this chunk: either the API is missing
 	(older NVDA), nothing is delegated to NVDA (add-on tags/dots for all attributes), or eligible markers
-	produced no output. Callers may then fall back to add-on tags for *Handled by NVDA core*.
+	produced no output. Callers may then fall back to add-on tags when the report row follows NVDA
+	(``CHOICE_likeSpeech`` / "Follow NVDA document formatting" in settings).
 	"""
 	markers = getattr(braille, "fontAttributeFormattingMarkers", None)
 	append_fn = getattr(braille, "_appendFormattingMarker", None)
 	if not isinstance(markers, dict) or not callable(append_fn):
 		return False
 	font_attrs_follow_nvda = (
-		get_report("fontAttributes", simple=False) == CHOICE_likeSpeech
+		report_row_follows_nvda("fontAttributes")
 		and font_attribute_reporting
 	)
 	spelling_follows_nvda = (
-		get_report("spellingErrors", simple=False) == CHOICE_likeSpeech
+		report_row_follows_nvda("spellingErrors")
 		and format_config_indicates_spelling_braille(formatConfig)
 	)
 	emphasis_follows_nvda = (
-		get_report("emphasis", simple=False) == CHOICE_likeSpeech
+		report_row_follows_nvda("emphasis")
 		and bool(formatConfig.get("reportEmphasis", False))
 	)
 	highlight_follows_nvda = (
-		get_report("highlight", simple=False) == CHOICE_likeSpeech
+		report_row_follows_nvda("highlight")
 		and bool(formatConfig.get("reportHighlight", False))
 	)
 	eligible: set[str] = set()
@@ -603,6 +606,24 @@ def _try_append_nvda_core_formatting_markers(
 	return True
 
 
+def _nvda_paragraph_start_preamble_allowed(formatConfig: dict[str, Any]) -> bool:
+	"""True when every enabled is-at-start report row follows NVDA (then prepend NVDA paragraph marker)."""
+	pairs = (
+		("reportLineNumber", "lineNumber"),
+		("reportHeadings", "headings"),
+		("reportLinks", "links"),
+		("reportComments", "comments"),
+	)
+	any_enabled = False
+	for fc_key, report_id in pairs:
+		if not formatConfig.get(fc_key):
+			continue
+		any_enabled = True
+		if not report_row_follows_nvda(report_id):
+			return False
+	return any_enabled
+
+
 def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 	"""Generates the braille text for the given format field.
 	@param field: The format field to examine.
@@ -621,7 +642,16 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 	if isAtStart:
 		if config.conf["brailleExtender"]["documentFormatting"]["processLinePerLine"]:
 			fieldCache.clear()
-		if formatConfig["reportParagraphIndentation"]:
+		if _nvda_paragraph_start_preamble_allowed(formatConfig):
+			get_psm = getattr(braille, "getParagraphStartMarker", None)
+			if callable(get_psm):
+				try:
+					marker = get_psm()
+					if marker:
+						textList.append(marker)
+				except Exception:
+					log.debugWarning("BrailleExtender: getParagraphStartMarker failed", exc_info=True)
+		if formatConfig["reportParagraphIndentation"] and use_be_format_field_chrome("paragraphIndentation"):
 			indentLabels = {
 				"left-indent": (N_("left indent"), N_("no left indent")),
 				"right-indent": (N_("right indent"), N_("no right indent")),
@@ -651,10 +681,19 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 			if headingLevel:
 				# Translators: Displayed in braille for a heading with a level.
 				# %s is replaced with the level.
-				textList.append((N_("h%s") % headingLevel)+' ')
+				hlabel = N_("h%s") % headingLevel
+				if use_be_format_field_chrome("headings"):
+					textList.append(hlabel + ' ')
+				else:
+					textList.append(hlabel)
+		collapsed = field.get("collapsed")
+		if collapsed:
+			try:
+				textList.append(braille.positiveStateLabels[controlTypes.State.COLLAPSED])
+			except Exception:
+				log.debugWarning("BrailleExtender: collapsed state label failed", exc_info=True)
 
-	if formatConfig["reportPage"]:
-		pageNumber = field.get("page-number")
+	if formatConfig["reportPage"] and use_be_format_field_chrome("page"):
 		oldPageNumber = fieldCache.get(
 			"page-number") if fieldCache is not None else None
 		if pageNumber and pageNumber != oldPageNumber:
@@ -693,7 +732,7 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 				text = N_("%s columns") % (textColumnCount)
 				textList.append("⣏%s⣹" % text)
 
-	if formatConfig["reportAlignment"]:
+	if formatConfig["reportAlignment"] and use_be_format_field_chrome("alignment"):
 		textAlign = normalizeTextAlign(field.get("text-align"))
 		old_textAlign = normalizeTextAlign(fieldCache.get("text-align"))
 		if textAlign and textAlign != old_textAlign:
@@ -705,9 +744,13 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 		link = field.get("link")
 		oldLink = fieldCache.get("link") if fieldCache else None
 		if link and link != oldLink:
-			textList.append(braille.roleLabels[get_control_type("ROLE_LINK")] +' ')
+			linkCell = braille.roleLabels[get_control_type("ROLE_LINK")]
+			if use_be_format_field_chrome("links"):
+				textList.append(linkCell + ' ')
+			else:
+				textList.append(linkCell)
 
-	if formatConfig["reportStyle"]:
+	if formatConfig["reportStyle"] and use_be_format_field_chrome("style"):
 		style = field.get("style")
 		oldStyle = fieldCache.get("style") if fieldCache is not None else None
 		if style != oldStyle:
@@ -721,7 +764,7 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 				# A style is a collection of formatting settings and depends on the application.
 				text = N_("default style")
 			textList.append("⣏%s⣹" % text)
-	if formatConfig["reportFontName"]:
+	if formatConfig["reportFontName"] and use_be_format_field_chrome("fontName"):
 		fontFamily = field.get("font-family")
 		oldFontFamily = fieldCache.get(
 			"font-family") if fieldCache is not None else None
@@ -732,13 +775,13 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 			"font-name") if fieldCache is not None else None
 		if fontName and fontName != oldFontName:
 			textList.append("⣏%s⣹" % fontName)
-	if formatConfig["reportFontSize"]:
+	if formatConfig["reportFontSize"] and use_be_format_field_chrome("fontSize"):
 		fontSize = field.get("font-size")
 		oldFontSize = fieldCache.get(
 			"font-size") if fieldCache is not None else None
 		if fontSize and fontSize != oldFontSize:
 			textList.append("⣏%s⣹" % fontSize)
-	if formatConfig["reportColor"]:
+	if formatConfig["reportColor"] and use_be_format_field_chrome("color"):
 		color = field.get("color")
 		oldColor = fieldCache.get("color") if fieldCache is not None else None
 		backgroundColor = field.get("background-color")
@@ -783,7 +826,7 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 			textList.append("⣏%s⣹" % N_("background pattern {pattern}").format(
 				pattern=backgroundPattern))
 
-	if formatConfig["reportRevisions"]:
+	if formatConfig["reportRevisions"] and use_be_format_field_chrome("revisions"):
 		revision_insertion = field.get("revision-insertion")
 		old_revision_insertion = fieldCache.get("revision-insertion")
 		tag_revision_deletion = get_tags(f"revision-deletion")
@@ -802,12 +845,26 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 
 	if formatConfig["reportComments"]:
 		comment = field.get("comment")
-		old_comment = fieldCache.get("comment")
-		tag = get_tags("comments")
-		if not old_comment and comment:
-			textList.append(tag.start)
-		elif old_comment and not comment:
-			textList.append(tag.end)
+		old_comment = fieldCache.get("comment") if fieldCache is not None else None
+		if not use_be_format_field_chrome("comments"):
+			if (comment or old_comment is not None) and comment != old_comment:
+				if comment:
+					if comment is textInfos.CommentType.DRAFT:
+						# Translators: Brailled when text contains a draft comment.
+						textList.append(_("drft cmnt"))
+					elif comment is textInfos.CommentType.RESOLVED:
+						# Translators: Brailled when text contains a resolved comment.
+						textList.append(_("rslvd cmnt"))
+					else:
+						# Translators: Brailled when text contains a generic comment.
+						textList.append(_("cmnt"))
+		else:
+			tag = get_tags("comments")
+			if tag:
+				if not old_comment and comment:
+					textList.append(tag.start)
+				elif old_comment and not comment:
+					textList.append(tag.end)
 
 	start_tag_list = []
 	end_tag_list = []
@@ -815,9 +872,9 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 	tags: list[str] = []
 
 	font_attribute_reporting = format_config_font_attributes_report_braille(formatConfig)
-	font_attrs_follow_nvda = get_report("fontAttributes", simple=False) == CHOICE_likeSpeech
-	emphasis_follows_nvda = get_report("emphasis", simple=False) == CHOICE_likeSpeech
-	highlight_follows_nvda = get_report("highlight", simple=False) == CHOICE_likeSpeech
+	font_attrs_follow_nvda = report_row_follows_nvda("fontAttributes")
+	emphasis_follows_nvda = report_row_follows_nvda("emphasis")
+	highlight_follows_nvda = report_row_follows_nvda("highlight")
 	if font_attribute_reporting and not font_attrs_follow_nvda:
 		tags += [tag for tag in [
 			"bold",
@@ -834,7 +891,7 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 		tags += [k for k in ("strong", "emphasised") if get_method(k) == CHOICE_tags]
 	if formatConfig.get("reportHighlight", False) and not highlight_follows_nvda:
 		tags += [k for k in ("marked",) if get_method(k) == CHOICE_tags]
-	spell_follows_nvda = get_report("spellingErrors", simple=False) == CHOICE_likeSpeech
+	spell_follows_nvda = report_row_follows_nvda("spellingErrors")
 	if _spelling_errors_show_in_braille(formatConfig):
 		if not spell_follows_nvda:
 			tags += [tag for tag in [
@@ -878,7 +935,7 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 	)
 	if not nvda_marker_api_ok:
 		if (
-			get_report("spellingErrors", simple=False) == CHOICE_likeSpeech
+			report_row_follows_nvda("spellingErrors")
 			and _spelling_errors_show_in_braille(formatConfig)
 		):
 			_apply_format_tag_names(

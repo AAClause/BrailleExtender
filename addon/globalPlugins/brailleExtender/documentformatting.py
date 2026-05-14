@@ -101,8 +101,8 @@ LABELS_FORMATTING = {
 }
 
 LABELS_STATES = {
-	# Translators: Document formatting option — follow NVDA's own settings for each report row (native braille markers when NVDA defines them for that attribute; otherwise NVDA speech/format flags still apply, with add-on presentation only where the core exposes no separate braille symbol).
-	CHOICE_likeSpeech: _("Handled by NVDA core"),
+	# Translators: First option in each document-formatting report row. This follows NVDA’s “Document formatting” category (what NVDA reports, including braille-related bits), and NVDA’s own braille markers when NVDA defines them. It is not the same as “output like speech only”. If your language needs a shorter string, consider: “Use NVDA defaults (document formatting & core braille)”.
+	CHOICE_likeSpeech: _("Follow NVDA document formatting"),
 	CHOICE_enabled: _("enabled"),
 	CHOICE_disabled: _("disabled"),
 }
@@ -246,6 +246,18 @@ def set_report(k, v, sect=False):
 	return True
 
 
+def report_row_follows_nvda(key: str) -> bool:
+	"""True when this add-on document-formatting row follows NVDA (``CHOICE_likeSpeech`` / "Follow NVDA document formatting")."""
+	if key not in conf["reports"]:
+		return False
+	return get_report(key, simple=False) == CHOICE_likeSpeech
+
+
+def use_be_format_field_chrome(key: str) -> bool:
+	"""When False, skip BrailleExtender-only braille (⣏ wrappers, configured Tags for that row, …) and match NVDA core."""
+	return not report_row_follows_nvda(key)
+
+
 def toggle_report(report):
 	cur = get_report(report, 0)
 	if not cur:
@@ -284,19 +296,19 @@ def decorator(fn, s):
 		if formatConfig is None:
 			formatConfig = {}
 		spell_attrs_delegated_to_nvda = (
-			get_report("spellingErrors", simple=False) == CHOICE_likeSpeech
+			report_row_follows_nvda("spellingErrors")
 			and format_config_indicates_spelling_braille(formatConfig)
 		)
 		classic_font_attrs_delegated_to_nvda = (
-			get_report("fontAttributes", simple=False) == CHOICE_likeSpeech
+			report_row_follows_nvda("fontAttributes")
 			and format_config_font_attributes_report_braille(formatConfig)
 		)
 		semantic_emphasis_delegated_to_nvda = (
-			get_report("emphasis", simple=False) == CHOICE_likeSpeech
+			report_row_follows_nvda("emphasis")
 			and bool(formatConfig.get("reportEmphasis", False))
 		)
 		semantic_highlight_delegated_to_nvda = (
-			get_report("highlight", simple=False) == CHOICE_likeSpeech
+			report_row_follows_nvda("highlight")
 			and bool(formatConfig.get("reportHighlight", False))
 		)
 		nvda_format_markers = getattr(braille, "fontAttributeFormattingMarkers", None) or {}
@@ -663,7 +675,7 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 	# Translators: title of a dialog.
 	title = N_("Document formatting")
 	panelDescription = _(
-		"The following options control the types of document formatting reported by NVDA in braille only."
+		"Each row: follow NVDA’s Document formatting settings, always show this information in braille (see Methods and Tags), or turn it off. “Follow NVDA” is not limited to speech; it uses the same report toggles as NVDA’s Document formatting dialog."
 	)
 
 	def makeSettings(self, settingsSizer):

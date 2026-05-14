@@ -100,6 +100,7 @@ CHOICE_dots78 = "dots78"
 CHOICE_tags = "tags"
 CHOICE_spacing = "spacing"
 TAG_SEPARATOR = chr(5)
+# Stored as '0' in config. Means “match NVDA Document formatting” + core braille markers when present — not “mirror speech output”.
 CHOICE_likeSpeech = '0'
 CHOICE_enabled = '1'
 CHOICE_disabled = '2'
