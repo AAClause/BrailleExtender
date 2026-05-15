@@ -15,7 +15,13 @@ import ui
 import wx
 
 from logHandler import log
-from .common import MIN_AUTO_SCROLL_DELAY, DEFAULT_AUTO_SCROLL_DELAY, MAX_AUTO_SCROLL_DELAY, MIN_STEP_DELAY_CHANGE, MAX_STEP_DELAY_CHANGE
+from .common import (
+	MIN_AUTO_SCROLL_DELAY,
+	DEFAULT_AUTO_SCROLL_DELAY,
+	MAX_AUTO_SCROLL_DELAY,
+	MIN_STEP_DELAY_CHANGE,
+	MAX_STEP_DELAY_CHANGE,
+)
 
 addonHandler.initTranslation()
 
@@ -124,7 +130,7 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 			gui.nvdaControls.SelectOnFocusSpinCtrl,
 			min=MIN_AUTO_SCROLL_DELAY,
 			max=MAX_AUTO_SCROLL_DELAY,
-			initial=get_auto_scroll_delay()
+			initial=get_auto_scroll_delay(),
 		)
 		# Translators: label of a dialog.
 		label = _("&Step for delay change (ms):")
@@ -133,7 +139,7 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 			gui.nvdaControls.SelectOnFocusSpinCtrl,
 			min=MIN_STEP_DELAY_CHANGE,
 			max=MAX_STEP_DELAY_CHANGE,
-			initial=conf["stepDelayChange"]
+			initial=conf["stepDelayChange"],
 		)
 		# Translators: label of a dialog.
 		label = _("&Adjust the delay to content")

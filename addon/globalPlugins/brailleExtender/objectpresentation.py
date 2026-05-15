@@ -45,7 +45,7 @@ PROPERTIES_ORDER = {
 
 def getDefaultOrderProperties(addon=False):
 	if addon:
-		return ADDON_ORDER_PROPERTIES.split(',')
+		return ADDON_ORDER_PROPERTIES.split(",")
 	else:
 		return list(PROPERTIES_ORDER.keys())
 
@@ -57,9 +57,7 @@ def loadOrderProperties():
 
 def getOrderPropertiesFromConfig():
 	defaultOrderProperties = getDefaultOrderProperties()
-	orderProperties = config.conf["brailleExtender"]["objectPresentation"][
-		"orderProperties"
-	].split(",")
+	orderProperties = config.conf["brailleExtender"]["objectPresentation"]["orderProperties"].split(",")
 	if len(defaultOrderProperties) > len(orderProperties):
 		log.error("Missing one or more elements")
 		setOrderProperties(defaultOrderProperties, True)
@@ -83,16 +81,11 @@ def setOrderProperties(newOrder, save=False):
 	global orderProperties
 	orderProperties = newOrder
 	if save:
-		config.conf["brailleExtender"]["objectPresentation"][
-			"orderProperties"
-		] = ",".join(newOrder)
+		config.conf["brailleExtender"]["objectPresentation"]["orderProperties"] = ",".join(newOrder)
 
 
 def selectedElementEnabled():
-	return (
-			config.conf["brailleExtender"]["objectPresentation"]["selectedElement"]
-			!= CHOICE_none
-	)
+	return config.conf["brailleExtender"]["objectPresentation"]["selectedElement"] != CHOICE_none
 
 
 def update_NVDAObjectRegion(self):
@@ -117,16 +110,16 @@ def update_NVDAObjectRegion(self):
 		keyboardShortcut=obj.keyboardShortcut if presConfig["reportKeyboardShortcuts"] else None,
 		positionInfo=obj.positionInfo if presConfig["reportObjectPositionInformation"] else None,
 		cellCoordsText=obj.cellCoordsText if get_report("tableCellCoords") else None,
-		cellInfo=cellInfo
+		cellInfo=cellInfo,
 	)
 	try:
 		if getattr(obj, "columnHeaderText"):
-			text += '⣀' + obj.columnHeaderText
+			text += "⣀" + obj.columnHeaderText
 	except NotImplementedError:
 		pass
 	try:
 		if getattr(obj, "rowHeaderText"):
-			text += '⡀' + obj.rowHeaderText
+			text += "⡀" + obj.rowHeaderText
 	except NotImplementedError:
 		pass
 	if not getattr(obj, "cellCoordsText"):
@@ -142,14 +135,14 @@ def update_NVDAObjectRegion(self):
 		except NotImplementedError:
 			pass
 		if coordinates:
-			text += ' ' + coordinates
+			text += " " + coordinates
 	if role == get_control_type("ROLE_MATH"):
 		import mathPres
+
 		mathPres.ensureInit()
 		if mathPres.brailleProvider:
 			try:
-				text += braille.TEXT_SEPARATOR + mathPres.brailleProvider.getBrailleForMathMl(
-					obj.mathMl)
+				text += braille.TEXT_SEPARATOR + mathPres.brailleProvider.getBrailleForMathMl(obj.mathMl)
 			except (NotImplementedError, LookupError):
 				pass
 	self.rawText = text + self.appendText
@@ -165,7 +158,7 @@ def is_current_display_string(current):
 		except KeyError:
 			pass
 	log.debugWarning("Aria-current value not handled: %s" % current)
-	return ''
+	return ""
 
 
 def get_roleLabel(role):
@@ -203,28 +196,31 @@ def getPropertiesBraille(**propertyValues) -> str:
 	# After all, a table cell that has no rowspan implemented is assumed to span one row.
 	rowSpan = propertyValues.get("rowSpan") or 1
 	columnSpan = propertyValues.get("columnSpan") or 1
-	includeTableCellCoords = get_report("tableCellCoords") and propertyValues.get("includeTableCellCoords", True)
-	positionInfoLevelStr = None
+	includeTableCellCoords = get_report("tableCellCoords") and propertyValues.get(
+		"includeTableCellCoords", True
+	)
 	if role is not None and not roleText:
 		if role == get_control_type("ROLE_HEADING") and level:
 			roleText = N_("h%s") % level
 			level = None
-		elif (
-				role == get_control_type("ROLE_LINK")
-				and states
-				and get_control_type("STATE_VISITED") in states
-		):
+		elif role == get_control_type("ROLE_LINK") and states and get_control_type("STATE_VISITED") in states:
 			states = states.copy()
 			states.discard(get_control_type("STATE_VISITED"))
 			roleText = N_("vlnk")
-		elif not description and config.conf["brailleExtender"]["documentFormatting"][
-			"cellFormula"] and states and get_control_type("STATE_HASFORMULA") in states and cellInfo and hasattr(cellInfo,
-																										   "formula") and cellInfo.formula:
+		elif (
+			not description
+			and config.conf["brailleExtender"]["documentFormatting"]["cellFormula"]
+			and states
+			and get_control_type("STATE_HASFORMULA") in states
+			and cellInfo
+			and hasattr(cellInfo, "formula")
+			and cellInfo.formula
+		):
 			states = states.copy()
 			states.discard(get_control_type("STATE_HASFORMULA"))
 			description = cellInfo.formula
 		elif (
-				name or cellCoordsText or rowNumber or columnNumber
+			name or cellCoordsText or rowNumber or columnNumber
 		) and role in controlTypes.silentRolesOnFocus:
 			roleText = None
 		else:
@@ -235,11 +231,7 @@ def getPropertiesBraille(**propertyValues) -> str:
 		roleText += roleTextPost
 	if roleText:
 		properties["roleText"] = roleText
-	value = (
-		propertyValues.get("value")
-		if role not in controlTypes.silentValuesForRoles
-		else None
-	)
+	value = propertyValues.get("value") if role not in controlTypes.silentValuesForRoles else None
 	if value:
 		properties["value"] = value
 	if states:
@@ -271,8 +263,7 @@ def getPropertiesBraille(**propertyValues) -> str:
 				number=indexInGroup, total=similarItemsInGroup
 			)
 		if level is not None:
-			properties["positionInfoLevel"] = N_(
-				"lv %s") % positionInfo["level"]
+			properties["positionInfoLevel"] = N_("lv %s") % positionInfo["level"]
 
 	rowCoordinate = ""
 	columnCoordinate = ""
@@ -284,8 +275,7 @@ def getPropertiesBraille(**propertyValues) -> str:
 					rowNumber=rowNumber, rowSpan=rowNumber + rowSpan - 1
 				)
 			else:
-				rowCoordinate = N_("r{rowNumber}").format(
-					rowNumber=rowNumber)
+				rowCoordinate = N_("r{rowNumber}").format(rowNumber=rowNumber)
 	if columnNumber:
 		columnHeaderText = propertyValues.get("columnHeaderText")
 		if includeTableCellCoords and not cellCoordsText:
@@ -294,9 +284,7 @@ def getPropertiesBraille(**propertyValues) -> str:
 					columnNumber=columnNumber, columnSpan=columnNumber + columnSpan - 1
 				)
 			else:
-				columnCoordinate = N_("c{columnNumber}").format(
-					columnNumber=columnNumber
-				)
+				columnCoordinate = N_("c{columnNumber}").format(columnNumber=columnNumber)
 	if not cellCoordsText and columnHeaderText or rowCoordinate or columnCoordinate:
 		includeTableCellCoords = True
 		if rowCoordinate and columnCoordinate:
@@ -326,15 +314,19 @@ def validProgressBar(obj):
 	List = [
 		isinstance(obj, ProgressBar),
 		config.conf["brailleExtender"]["objectPresentation"]["progressBarUpdate"],
-		not controlTypes.STATE_INVISIBLE in obj.states,
-		not controlTypes.STATE_OFFSCREEN in obj.states
+		controlTypes.STATE_INVISIBLE not in obj.states,
+		controlTypes.STATE_OFFSCREEN not in obj.states,
 	]
 	inForeground = obj.isInForeground
 	if not config.conf["brailleExtender"]["objectPresentation"]["reportBackgroundProgressBars"]:
-		List.append(config.conf["presentation"]["progressBarUpdates"]["reportBackgroundProgressBars"] or inForeground)
-	elif config.conf["brailleExtender"]["objectPresentation"]["reportBackgroundProgressBars"] == int(addoncfg.CHOICE_disabled):
+		List.append(
+			config.conf["presentation"]["progressBarUpdates"]["reportBackgroundProgressBars"] or inForeground
+		)
+	elif config.conf["brailleExtender"]["objectPresentation"]["reportBackgroundProgressBars"] == int(
+		addoncfg.CHOICE_disabled
+	):
 		List.append(inForeground)
-	return(List)
+	return List
 
 
 def generateProgressBarString(value, displaySize):
@@ -342,11 +334,12 @@ def generateProgressBarString(value, displaySize):
 		intString = ""
 		try:
 			intString = re.search(r"(\d+)", value).group(1)
-		except AttributeError: return
+		except AttributeError:
+			return
 		if not intString == "100" and len(intString) > 2:
 			intString = intString[:2]
 		value = int(intString)
-	return '⣿' * (value * displaySize // 100)
+	return "⣿" * (value * displaySize // 100)
 
 
 class ManageOrderProperties(gui.settingsDialogs.SettingsDialog):
@@ -355,35 +348,24 @@ class ManageOrderProperties(gui.settingsDialogs.SettingsDialog):
 
 	def makeSettings(self, settingsSizer):
 		sHelper = gui.guiHelper.BoxSizerHelper(self, orientation=wx.VERTICAL)
-		self.orderProperties = {
-			k: PROPERTIES_ORDER[k] for k in getOrderProperties()}
+		self.orderProperties = {k: PROPERTIES_ORDER[k] for k in getOrderProperties()}
 		self.orderPropertiesList = sHelper.addLabeledControl(
 			_("Properties"), wx.Choice, choices=self.getProperties()
 		)
-		self.orderPropertiesList.Bind(
-			wx.EVT_CHOICE, self.onOrderPropertiesList)
+		self.orderPropertiesList.Bind(wx.EVT_CHOICE, self.onOrderPropertiesList)
 		self.orderPropertiesList.SetSelection(0)
 		bHelper = gui.guiHelper.ButtonHelper(orientation=wx.HORIZONTAL)
 		self.moveUpBtn = bHelper.addButton(self, label=_("Move &up"))
 		self.moveUpBtn.Bind(wx.EVT_BUTTON, lambda evt: self.move(evt, MOVE_UP))
 		self.moveDownBtn = bHelper.addButton(self, label=_("Move &down"))
-		self.moveDownBtn.Bind(
-			wx.EVT_BUTTON, lambda evt: self.move(evt, MOVE_DOWN))
+		self.moveDownBtn.Bind(wx.EVT_BUTTON, lambda evt: self.move(evt, MOVE_DOWN))
 		sHelper.addItem(bHelper)
 
 		bHelper = gui.guiHelper.ButtonHelper(orientation=wx.HORIZONTAL)
-		self.resetNVDAOrder = bHelper.addButton(
-			self, label=_("Reset to the default &NVDA order")
-		)
-		self.resetNVDAOrder.Bind(
-			wx.EVT_BUTTON, lambda evt: self.assign(evt, NVDA_ORDER)
-		)
-		self.resetAddonOrder = bHelper.addButton(
-			self, label=_("Reset to the &default add-on order")
-		)
-		self.resetAddonOrder.Bind(
-			wx.EVT_BUTTON, lambda evt: self.assign(evt, ADDON_ORDER)
-		)
+		self.resetNVDAOrder = bHelper.addButton(self, label=_("Reset to the default &NVDA order"))
+		self.resetNVDAOrder.Bind(wx.EVT_BUTTON, lambda evt: self.assign(evt, NVDA_ORDER))
+		self.resetAddonOrder = bHelper.addButton(self, label=_("Reset to the &default add-on order"))
+		self.resetAddonOrder.Bind(wx.EVT_BUTTON, lambda evt: self.assign(evt, ADDON_ORDER))
 		sHelper.addItem(bHelper)
 
 	def onOrderPropertiesList(self, evt=None):
@@ -420,10 +402,8 @@ class ManageOrderProperties(gui.settingsDialogs.SettingsDialog):
 		}
 		firstLabel = self.getProperties()[firstPos]
 		secondLabel = self.getProperties()[secondPos]
-		l = [
-			k if not k in toReplace else toReplace[k] for k in self.getPropertiesKeys()
-		]
-		self.orderProperties = {e: PROPERTIES_ORDER[e] for e in l}
+		ordered_keys = [k if k not in toReplace else toReplace[k] for k in self.getPropertiesKeys()]
+		self.orderProperties = {e: PROPERTIES_ORDER[e] for e in ordered_keys}
 		setOrderProperties(self.getPropertiesKeys())
 		self.refresh()
 		self.orderPropertiesList.SetSelection(secondPos)
@@ -460,8 +440,7 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 
 	def makeSettings(self, settingsSizer):
 		sHelper = gui.guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
-		self.choices = {k: v for k, v in CHOICES_LABELS.items()
-						if k != CHOICE_liblouis}
+		self.choices = {k: v for k, v in CHOICES_LABELS.items() if k != CHOICE_liblouis}
 		try:
 			itemToSelect = list(self.choices.keys()).index(
 				config.conf["brailleExtender"]["objectPresentation"]["selectedElement"]
@@ -477,22 +456,26 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		self.progressBarUpdate = sHelper.addLabeledControl(
 			_("Progress bar output using braille messages:"),
 			wx.Choice,
-			choices=[_("disabled (original behavior)"), _("enabled, show raw value"), _("enabled, show a progress bar using ⣿")]
+			choices=[
+				_("disabled (original behavior)"),
+				_("enabled, show raw value"),
+				_("enabled, show a progress bar using ⣿"),
+			],
 		)
-		self.progressBarUpdate.SetSelection(config.conf["brailleExtender"]["objectPresentation"]["progressBarUpdate"])
+		self.progressBarUpdate.SetSelection(
+			config.conf["brailleExtender"]["objectPresentation"]["progressBarUpdate"]
+		)
 		self.background = sHelper.addLabeledControl(
 			_("Report background progress bars:"),
 			wx.Choice,
 			choices=list(LABELS_STATES.values()),
 		)
-		self.background.SetSelection(config.conf["brailleExtender"]["objectPresentation"]["reportBackgroundProgressBars"])
-
-
+		self.background.SetSelection(
+			config.conf["brailleExtender"]["objectPresentation"]["reportBackgroundProgressBars"]
+		)
 
 		bHelper = gui.guiHelper.ButtonHelper(orientation=wx.HORIZONTAL)
-		self.orderPropertiesBtn = bHelper.addButton(
-			self, label="&Order Properties..."
-		)
+		self.orderPropertiesBtn = bHelper.addButton(self, label="&Order Properties...")
 		self.orderPropertiesBtn.Bind(wx.EVT_BUTTON, self.onOrderPropertiesBtn)
 
 		sHelper.addItem(bHelper)
@@ -504,10 +487,15 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		self.orderPropertiesBtn.SetFocus()
 
 	def onSave(self):
-		config.conf["brailleExtender"]["objectPresentation"]["selectedElement"] = list(
-			self.choices.keys()
-		)[self.selectedElement.GetSelection()]
-		config.conf["brailleExtender"]["objectPresentation"]["progressBarUpdate"] = self.progressBarUpdate.GetSelection()
-		config.conf["brailleExtender"]["objectPresentation"]["reportBackgroundProgressBars"] = self.background.GetSelection()
+		config.conf["brailleExtender"]["objectPresentation"]["selectedElement"] = list(self.choices.keys())[
+			self.selectedElement.GetSelection()
+		]
+		config.conf["brailleExtender"]["objectPresentation"]["progressBarUpdate"] = (
+			self.progressBarUpdate.GetSelection()
+		)
+		config.conf["brailleExtender"]["objectPresentation"]["reportBackgroundProgressBars"] = (
+			self.background.GetSelection()
+		)
+
 
 REASON_FOCUS = get_output_reason("FOCUS")

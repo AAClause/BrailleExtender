@@ -61,9 +61,7 @@ _LIBLOUIS_FLAGS_BY_ATTR: dict[str, int] = {
 }
 
 _NVDA_MANAGED_SPELLING_ATTRS: frozenset[str] = frozenset(("invalid-spelling", "invalid-grammar"))
-_NVDA_MANAGED_CLASSIC_FONT_ATTRS: frozenset[str] = frozenset(
-	("bold", "italic", "underline", "strikethrough")
-)
+_NVDA_MANAGED_CLASSIC_FONT_ATTRS: frozenset[str] = frozenset(("bold", "italic", "underline", "strikethrough"))
 _NVDA_SEMANTIC_EMPHASIS_ATTRS: frozenset[str] = frozenset(("strong", "emphasised"))
 _NVDA_SEMANTIC_MARK_ATTRS: frozenset[str] = frozenset(("marked",))
 
@@ -162,7 +160,7 @@ LABELS_REPORTS = {
 	"revisions": N_("&Editor revisions"),
 	"tables": N_("&Tables"),
 	"tableHeaders": N_("Row/column h&eaders"),
-	"tableCellCoords": N_("Cell c&oordinates")
+	"tableCellCoords": N_("Cell c&oordinates"),
 }
 
 logTextInfo = False
@@ -240,9 +238,7 @@ def get_report(key, simple=True):
 			normalized_key = normalize_report_key(key)
 			if not normalized_key:
 				return
-			return config.conf["documentFormatting"][
-				normalized_key
-			]
+			return config.conf["documentFormatting"][normalized_key]
 		return val == CHOICE_enabled
 	if key not in conf:
 		log.error(f"unknown {key} key")
@@ -260,7 +256,7 @@ def set_report(k, v, sect=False):
 		if not isinstance(conf["reports"][k], config.AggregatedSection):
 			log.error(f"'{k}' is not a section")
 			return False
-		if not "enabled" in conf["reports"][k]:
+		if "enabled" not in conf["reports"][k]:
 			log.error(f"'{k}' is not a valid section")
 			return False
 		conf[k]["enabled"] = v
@@ -287,15 +283,15 @@ def toggle_report(report):
 	cur = get_report(report, 0)
 	if not cur:
 		cur = CHOICE_likeSpeech
-	l = list(LABELS_STATES.keys())
-	cur_index = l.index(cur)
-	new_index = (cur_index + 1) % len(l)
-	set_report(report, l[new_index])
+	state_keys = list(LABELS_STATES.keys())
+	cur_index = state_keys.index(cur)
+	new_index = (cur_index + 1) % len(state_keys)
+	set_report(report, state_keys[new_index])
 
 
 def report_formatting(report):
 	cur = get_report(report, 0)
-	label_report = LABELS_REPORTS[report].replace('&', '')
+	label_report = LABELS_REPORTS[report].replace("&", "")
 	label_state = LABELS_STATES.get(cur)
 	if not label_state:
 		label_state = N_("unknown")
@@ -303,10 +299,10 @@ def report_formatting(report):
 
 
 def get_method(k):
-	l = [k]
-	if ':' in k:
-		l.append(k.split(':', 1)[0])
-	for e in l:
+	candidates = [k]
+	if ":" in k:
+		candidates.append(k.split(":", 1)[0])
+	for e in candidates:
 		if e in conf["methods"]:
 			return conf["methods"][e]
 	return CHOICE_none
@@ -335,21 +331,17 @@ def decorator(fn, s):
 	def _getTypeformFromFormatField(self, field, formatConfig=None):
 		if formatConfig is None:
 			formatConfig = {}
-		spell_attrs_delegated_to_nvda = (
-			report_row_follows_nvda("spellingErrors")
-			and format_config_indicates_spelling_braille(formatConfig)
+		spell_attrs_delegated_to_nvda = report_row_follows_nvda(
+			"spellingErrors"
+		) and format_config_indicates_spelling_braille(formatConfig)
+		classic_font_attrs_delegated_to_nvda = report_row_follows_nvda(
+			"fontAttributes"
+		) and format_config_font_attributes_report_braille(formatConfig)
+		semantic_emphasis_delegated_to_nvda = report_row_follows_nvda("emphasis") and bool(
+			formatConfig.get("reportEmphasis", False)
 		)
-		classic_font_attrs_delegated_to_nvda = (
-			report_row_follows_nvda("fontAttributes")
-			and format_config_font_attributes_report_braille(formatConfig)
-		)
-		semantic_emphasis_delegated_to_nvda = (
-			report_row_follows_nvda("emphasis")
-			and bool(formatConfig.get("reportEmphasis", False))
-		)
-		semantic_highlight_delegated_to_nvda = (
-			report_row_follows_nvda("highlight")
-			and bool(formatConfig.get("reportHighlight", False))
+		semantic_highlight_delegated_to_nvda = report_row_follows_nvda("highlight") and bool(
+			formatConfig.get("reportHighlight", False)
 		)
 		nvda_format_markers = getattr(braille, "fontAttributeFormattingMarkers", None) or {}
 		louis_typeform_flags = louis.plain_text
@@ -409,9 +401,7 @@ def decorator(fn, s):
 		textInfo_ = info.getTextWithFields(formatConfig_)
 		formatField = textInfos.FormatField()
 		for field in textInfo_:
-			if isinstance(field, textInfos.FieldCommand) and isinstance(
-					field.field, textInfos.FormatField
-			):
+			if isinstance(field, textInfos.FieldCommand) and isinstance(field.field, textInfos.FormatField):
 				formatField.update(field.field)
 		if logTextInfo:
 			log.info(formatField)
@@ -428,26 +418,26 @@ def decorator(fn, s):
 				IA2Attributes = curObj.IA2Attributes
 				tag = IA2Attributes.get("tag")
 				if tag == "li":
-					s = (int(IA2Attributes["level"]) - 1) * \
-						2 if IA2Attributes.get("level") else 0
+					s = (int(IA2Attributes["level"]) - 1) * 2 if IA2Attributes.get("level") else 0
 					noAlign = True
-					postReplacements.append(regionhelper.BrailleCellReplacement(
-						start=0, insertBefore=('⠀' * s)))
+					postReplacements.append(
+						regionhelper.BrailleCellReplacement(start=0, insertBefore=("⠀" * s))
+					)
 		formatField = self.formatField
 		if not noAlign and get_report("alignments"):
 			textAlign = formatField.get("text-align")
-			if textAlign and alignment_uses_display_line_pad(textAlign) and textAlign not in ("start", "left"):
+			if (
+				textAlign
+				and alignment_uses_display_line_pad(textAlign)
+				and textAlign not in ("start", "left")
+			):
 				textAlign_norm = normalizeTextAlign(textAlign) or textAlign
 				displaySize = braille.handler.displaySize
 				content_cells = len(self.brailleCells) - 1
-				pad_len = alignment_display_line_pad_len(
-					textAlign_norm, displaySize, content_cells
-				)
+				pad_len = alignment_display_line_pad_len(textAlign_norm, displaySize, content_cells)
 				if pad_len > 0:
 					postReplacements.append(
-						regionhelper.BrailleCellReplacement(
-							start=0, insertBefore=("⠀" * pad_len)
-						)
+						regionhelper.BrailleCellReplacement(start=0, insertBefore=("⠀" * pad_len))
 					)
 		if postReplacements:
 			regionhelper.replaceBrailleCells(self, postReplacements)
@@ -496,8 +486,8 @@ def get_tags(k, tags=None):
 		return None
 	if k in tags:
 		return tags[k]
-	if ':' in k and k.split(':')[0] in tags:
-		return tags[k.split(':')[0]]
+	if ":" in k and k.split(":")[0] in tags:
+		return tags[k.split(":")[0]]
 	return None
 
 
@@ -556,7 +546,9 @@ def alignment_method_shows_format_tags(text_align_raw: str | None) -> bool:
 
 
 def alignment_display_line_pad_len(
-	text_align: str, display_size: int, content_cells: int,
+	text_align: str,
+	display_size: int,
+	content_cells: int,
 ) -> int:
 	"""How many leading blank cells to insert in pad alignment mode.
 
@@ -593,10 +585,10 @@ def alignment_display_line_pad_len(
 
 class ManageMethods(wx.Dialog):
 	def __init__(
-			self,
-			parent=None,
-			# Translators: title of a dialog.
-			title=_("Formatting Method"),
+		self,
+		parent=None,
+		# Translators: title of a dialog.
+		title=_("Formatting Method"),
 	):
 		super().__init__(parent, title=title)
 		mainSizer = wx.BoxSizer(wx.VERTICAL)
@@ -624,13 +616,9 @@ class ManageMethods(wx.Dialog):
 
 		# --- Spelling and grammar ---
 		gSpell = add_group(_("Spelling and grammar"))
-		self.spellingErrors = gSpell.addLabeledControl(
-			_("&Spelling errors:"), wx.Choice, choices=choices
-		)
+		self.spellingErrors = gSpell.addLabeledControl(_("&Spelling errors:"), wx.Choice, choices=choices)
 		self.spellingErrors.SetSelection(self.getItemToSelect("invalid-spelling"))
-		self.grammarError = gSpell.addLabeledControl(
-			_("&Grammar errors:"), wx.Choice, choices=choices
-		)
+		self.grammarError = gSpell.addLabeledControl(_("&Grammar errors:"), wx.Choice, choices=choices)
 		self.grammarError.SetSelection(self.getItemToSelect("invalid-grammar"))
 
 		# --- Classic font attributes ---
@@ -641,9 +629,7 @@ class ManageMethods(wx.Dialog):
 		self.italic.SetSelection(self.getItemToSelect("italic"))
 		self.underline = gFont.addLabeledControl(_("&Underline:"), wx.Choice, choices=choices)
 		self.underline.SetSelection(self.getItemToSelect("underline"))
-		self.strikethrough = gFont.addLabeledControl(
-			_("Strike&through:"), wx.Choice, choices=choices
-		)
+		self.strikethrough = gFont.addLabeledControl(_("Strike&through:"), wx.Choice, choices=choices)
 		self.strikethrough.SetSelection(self.getItemToSelect("strikethrough"))
 
 		# --- Semantic emphasis / highlight ---
@@ -695,9 +681,7 @@ class ManageMethods(wx.Dialog):
 	@staticmethod
 	def getItemToSelect(attribute: str) -> int:
 		try:
-			return list(CHOICES_LABELS.keys()).index(
-				conf["methods"].get(attribute, CHOICE_none)
-			)
+			return list(CHOICES_LABELS.keys()).index(conf["methods"].get(attribute, CHOICE_none))
 		except ValueError:
 			log.debugWarning("BrailleExtender: unknown formatting method %r", attribute)
 			return 0
@@ -724,21 +708,18 @@ class ManageMethods(wx.Dialog):
 
 
 class ManageTags(wx.Dialog):
-
 	def __init__(
-			self,
-			parent=None,
-			# Translators: title of a dialog.
-			title=_("Customize formatting tags"),
+		self,
+		parent=None,
+		# Translators: title of a dialog.
+		title=_("Customize formatting tags"),
 	):
 		self.tags = _tags.copy()
 		super().__init__(parent, title=title)
 		mainSizer = wx.BoxSizer(wx.VERTICAL)
 		sHelper = gui.guiHelper.BoxSizerHelper(self, orientation=wx.VERTICAL)
 		choices = list(LABELS_FORMATTING.values())
-		self.formatting = sHelper.addLabeledControl(
-			_("&Formatting"), wx.Choice, choices=choices
-		)
+		self.formatting = sHelper.addLabeledControl(_("&Formatting"), wx.Choice, choices=choices)
 		self.formatting.SetSelection(0)
 		self.formatting.Bind(wx.EVT_CHOICE, self.onFormatting)
 		self.startTag = sHelper.addLabeledControl(_("&Start tag"), wx.TextCtrl)
@@ -748,8 +729,7 @@ class ManageTags(wx.Dialog):
 		self.endTag.Bind(wx.EVT_TEXT, self.onTags)
 		self.onFormatting()
 
-		sHelper.addDialogDismissButtons(
-			self.CreateButtonSizer(wx.OK | wx.CANCEL))
+		sHelper.addDialogDismissButtons(self.CreateButtonSizer(wx.OK | wx.CANCEL))
 		mainSizer.Add(sHelper.sizer, border=20, flag=wx.ALL)
 		mainSizer.Fit(self)
 		self.SetSizer(mainSizer)
@@ -757,16 +737,13 @@ class ManageTags(wx.Dialog):
 		self.formatting.SetFocus()
 
 	def get_key_attribute(self):
-		l = list(LABELS_FORMATTING.keys())
+		formatting_keys = list(LABELS_FORMATTING.keys())
 		selection = self.formatting.GetSelection()
-		return l[selection] if 0 <= selection < len(l) else 0
+		return formatting_keys[selection] if 0 <= selection < len(formatting_keys) else 0
 
 	def onTags(self, evt=None):
 		k = self.get_key_attribute()
-		self.tags[k] = TAG_FORMATTING(
-			self.startTag.GetValue(),
-			self.endTag.GetValue()
-		)
+		self.tags[k] = TAG_FORMATTING(self.startTag.GetValue(), self.endTag.GetValue())
 
 	def onFormatting(self, evt=None):
 		k = self.get_key_attribute()
@@ -796,27 +773,21 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		sHelper.addItem(wx.StaticText(self, label=self.panelDescription))
 
 		label = _("Plain text mode (disable all text formatting)")
-		self.plainText = sHelper.addItem(
-			wx.CheckBox(self, label=label))
+		self.plainText = sHelper.addItem(wx.CheckBox(self, label=label))
 		self.plainText.SetValue(conf["plainText"])
 
 		label = _("Process formatting line per line")
-		self.processLinePerLine = sHelper.addItem(
-			wx.CheckBox(self, label=label))
+		self.processLinePerLine = sHelper.addItem(wx.CheckBox(self, label=label))
 		self.processLinePerLine.SetValue(conf["processLinePerLine"])
 
 		keys = list(LABELS_STATES.keys())
 		choices = list(LABELS_STATES.values())
 		self.dynamic_options = []
 		for key, val in LABELS_REPORTS.items():
-			self.dynamic_options.append(sHelper.addLabeledControl(
-				_("{label}:").format(label=val),
-				wx.Choice,
-				choices=choices
-			))
-			self.dynamic_options[-1].SetSelection(keys.index(
-				get_report(key, 0)
-			))
+			self.dynamic_options.append(
+				sHelper.addLabeledControl(_("{label}:").format(label=val), wx.Choice, choices=choices)
+			)
+			self.dynamic_options[-1].SetSelection(keys.index(get_report(key, 0)))
 
 		label = _("Cell &formula (Excel only for now)")
 		self.cellFormula = sHelper.addItem(wx.CheckBox(self, label=label))
@@ -827,9 +798,7 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		self.levelItemsList.SetValue(conf["lists"]["showLevelItem"])
 
 		bHelper = gui.guiHelper.ButtonHelper(orientation=wx.HORIZONTAL)
-		self.methodsBtn = bHelper.addButton(
-			self, label=_("Met&hods...")
-		)
+		self.methodsBtn = bHelper.addButton(self, label=_("Met&hods..."))
 		self.methodsBtn.Bind(wx.EVT_BUTTON, self.onMethodsBtn)
 		self.tagsBtn = bHelper.addButton(self, label="Tag&s...")
 		self.tagsBtn.Bind(wx.EVT_BUTTON, self.onTagsBtn)
@@ -854,8 +823,6 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		conf["lists"]["showLevelItem"] = self.levelItemsList.IsChecked()
 
 		for i, key in enumerate(LABELS_REPORTS.keys()):
-			val = list(LABELS_STATES.keys())[
-				self.dynamic_options[i].GetSelection()
-			]
+			val = list(LABELS_STATES.keys())[self.dynamic_options[i].GetSelection()]
 			set_report(key, val)
 		conf["cellFormula"] = self.cellFormula.IsChecked()

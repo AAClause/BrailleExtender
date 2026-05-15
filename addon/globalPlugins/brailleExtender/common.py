@@ -15,10 +15,12 @@ import controlTypes
 import globalVars
 import languageHandler
 
+
 def get_is_current_no():
 	if hasattr(controlTypes, "IsCurrent"):
 		return controlTypes.IsCurrent.NO
 	return False
+
 
 IS_CURRENT_NO = get_is_current_no()
 
@@ -41,9 +43,11 @@ def nvdaVersionAtLeast(year: int, major: int, minor: int = 0) -> bool:
 	"""
 	try:
 		parts = versionInfo.version.split(".", 2)
+
 		def _intPart(s):
 			m = re.search(r"\d+", s)
 			return int(m.group()) if m else 0
+
 		vYear = _intPart(parts[0]) if len(parts) > 0 else 0
 		vMajor = _intPart(parts[1]) if len(parts) > 1 else 0
 		vMinor = _intPart(parts[2]) if len(parts) > 2 else 0
@@ -70,11 +74,7 @@ def default_braille_table_file_for_cur_language(*, is_input: bool) -> str:
 	addon-consistent fallbacks and must not touch those APIs.
 	"""
 	if NVDA_HAS_AUTOMATIC_BRAILLE_TABLES:
-		table_type = (
-			brailleTables.TableType.INPUT
-			if is_input
-			else brailleTables.TableType.OUTPUT
-		)
+		table_type = brailleTables.TableType.INPUT if is_input else brailleTables.TableType.OUTPUT
 		return brailleTables.getDefaultTableForCurLang(table_type)
 	if is_input:
 		# Matches historical ``addoncfg.loadGestures`` fallback when ``inputTable == "auto"``.
@@ -82,13 +82,16 @@ def default_braille_table_file_for_cur_language(*, is_input: bool) -> str:
 	return brailleTables.DEFAULT_TABLE
 
 
-lang = languageHandler.getLanguage().split('_')[-1].lower()
-punctuationSeparator = ' ' if 'fr' in lang else ''
+lang = languageHandler.getLanguage().split("_")[-1].lower()
+punctuationSeparator = " " if "fr" in lang else ""
 
 
 profilesDir = os.path.join(baseDir, "Profiles")
 
-N_ = lambda s: _(s)
+
+def N_(s):
+	return _(s)
+
 
 CHOICE_none = "none"
 
@@ -102,9 +105,9 @@ CHOICE_spacing = "spacing"  # legacy alignment config value; treated like ``CHOI
 CHOICE_linePad = "linePad"  # alignment-only: prepend braille blanks to suggest visual position on the display
 TAG_SEPARATOR = chr(5)
 # Stored as '0' in config. Means “match NVDA Document formatting” + core braille markers when present — not “mirror speech output”.
-CHOICE_likeSpeech = '0'
-CHOICE_enabled = '1'
-CHOICE_disabled = '2'
+CHOICE_likeSpeech = "0"
+CHOICE_enabled = "1"
+CHOICE_disabled = "2"
 
 # Bitmasks OR'd onto Liblouis output cells (dots 1–6 occupy bits 0–5; dots 7–8 are the “brlex” overlay).
 BRLEX_DOT7_CELL_MASK = 0x40

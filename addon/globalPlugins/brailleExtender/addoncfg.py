@@ -7,19 +7,36 @@ import os
 
 import addonHandler
 import braille
-import brailleInput
 import config
 import configobj
 import globalVars
 import inputCore
 from logHandler import log
 from .common import (
-	addonUpdateChannel, configDir, profilesDir,
-	MIN_AUTO_SCROLL_DELAY, DEFAULT_AUTO_SCROLL_DELAY, MAX_AUTO_SCROLL_DELAY, MIN_STEP_DELAY_CHANGE, DEFAULT_STEP_DELAY_CHANGE, MAX_STEP_DELAY_CHANGE,
-	RC_NORMAL, RC_EMULATE_ARROWS_BEEP, RC_EMULATE_ARROWS_SILENT,
-	CHOICE_none, CHOICE_dot7, CHOICE_dot8, CHOICE_dots78, CHOICE_tags,
-	CHOICE_likeSpeech, CHOICE_disabled, CHOICE_enabled,
-	ADDON_ORDER_PROPERTIES, CHOICE_spacing, CHOICE_linePad, TAG_SEPARATOR,
+	addonUpdateChannel,
+	configDir,
+	profilesDir,
+	MIN_AUTO_SCROLL_DELAY,
+	DEFAULT_AUTO_SCROLL_DELAY,
+	MAX_AUTO_SCROLL_DELAY,
+	MIN_STEP_DELAY_CHANGE,
+	DEFAULT_STEP_DELAY_CHANGE,
+	MAX_STEP_DELAY_CHANGE,
+	RC_NORMAL,
+	RC_EMULATE_ARROWS_BEEP,
+	RC_EMULATE_ARROWS_SILENT,
+	CHOICE_none,
+	CHOICE_dot7,
+	CHOICE_dot8,
+	CHOICE_dots78,
+	CHOICE_tags,
+	CHOICE_likeSpeech,
+	CHOICE_disabled,
+	CHOICE_enabled,
+	ADDON_ORDER_PROPERTIES,
+	CHOICE_spacing,
+	CHOICE_linePad,
+	TAG_SEPARATOR,
 	default_braille_table_file_for_cur_language,
 )
 from .onehand import DOT_BY_DOT, ONE_SIDE, BOTH_SIDES
@@ -39,29 +56,30 @@ CHOICE_review = "review"
 CHOICE_focusAndReview = "focusAndReview"
 NOVIEWSAVED = chr(4)
 
-outputMessage = dict([
-	(CHOICE_none,             _("none")),
-	(CHOICE_braille,          _("braille only")),
-	(CHOICE_speech,           _("speech only")),
-	(CHOICE_speechAndBraille, _("both"))
-])
+outputMessage = dict(
+	[
+		(CHOICE_none, _("none")),
+		(CHOICE_braille, _("braille only")),
+		(CHOICE_speech, _("speech only")),
+		(CHOICE_speechAndBraille, _("both")),
+	]
+)
 
-updateChannels = dict([
-	(CHANNEL_stable,  _("stable")),
-	(CHANNEL_dev,     _("development"))
-])
+updateChannels = dict([(CHANNEL_stable, _("stable")), (CHANNEL_dev, _("development"))])
 
-focusOrReviewChoices = dict([
-	(CHOICE_none,           _("none")),
-	(CHOICE_focus,          _("focus mode")),
-	(CHOICE_review,         _("review mode")),
-	(CHOICE_focusAndReview, _("both"))
-])
+focusOrReviewChoices = dict(
+	[
+		(CHOICE_none, _("none")),
+		(CHOICE_focus, _("focus mode")),
+		(CHOICE_review, _("review mode")),
+		(CHOICE_focusAndReview, _("both")),
+	]
+)
 
 routingCursorsEditFields_labels = {
 	RC_NORMAL: _("normal (recommended outside Windows consoles, IntelliJ, PyCharm...)"),
-	RC_EMULATE_ARROWS_BEEP:   _("alternative, emulate left and right arrow keys with beeps"),
-	RC_EMULATE_ARROWS_SILENT: _("alternative, emulate left and right arrow keys silently")
+	RC_EMULATE_ARROWS_BEEP: _("alternative, emulate left and right arrow keys with beeps"),
+	RC_EMULATE_ARROWS_SILENT: _("alternative, emulate left and right arrow keys silently"),
 }
 curBD = braille.handler.display.name
 backupDisplaySize = braille.handler.displaySize
@@ -70,14 +88,17 @@ iniGestures = {}
 iniProfile = {}
 profileFileExists = gesturesFileExists = False
 
-noMessageTimeout = True if 'noMessageTimeout' in config.conf["braille"] else False
+noMessageTimeout = True if "noMessageTimeout" in config.conf["braille"] else False
 outputTables = inputTables = None
 preTable = []
 postTable = []
-if not os.path.exists(profilesDir): log.error('Profiles\' path not found')
-else: log.debug('Profiles\' path (%s) found' % profilesDir)
+if not os.path.exists(profilesDir):
+	log.error("Profiles' path not found")
+else:
+	log.debug("Profiles' path (%s) found" % profilesDir)
 try:
 	import brailleTables
+
 	tables = brailleTables.listTables()
 	tablesFN = [t[0] for t in brailleTables.listTables()]
 	tablesUFN = [t[0] for t in brailleTables.listTables() if not t.contracted and t.output]
@@ -86,35 +107,41 @@ try:
 except BaseException:
 	noUnicodeTable = True
 
+
 def getValidBrailleDisplayPrefered():
-	l = braille.getDisplayList()
-	l.append(("last", _("last known")))
-	return l
+	displays = braille.getDisplayList()
+	displays.append(("last", _("last known")))
+	return displays
+
 
 def getConfspec():
 	global curBD
 	curBD = braille.handler.display.name
-	REPORT_CHOICES = f'option({CHOICE_likeSpeech}, {CHOICE_disabled}, {CHOICE_enabled}, default={CHOICE_likeSpeech})'
-	REPORT_CHOICES_E = f'option({CHOICE_likeSpeech}, {CHOICE_disabled}, {CHOICE_enabled}, default={CHOICE_enabled})'
+	REPORT_CHOICES = (
+		f"option({CHOICE_likeSpeech}, {CHOICE_disabled}, {CHOICE_enabled}, default={CHOICE_likeSpeech})"
+	)
+	REPORT_CHOICES_E = (
+		f"option({CHOICE_likeSpeech}, {CHOICE_disabled}, {CHOICE_enabled}, default={CHOICE_enabled})"
+	)
 	return {
 		"autoCheckUpdate": "boolean(default=True)",
 		"lastNVDAVersion": 'string(default="unknown")',
 		"updateChannel": f"option({CHANNEL_dev}, {CHANNEL_stable}, default={addonUpdateChannel})",
 		"lastCheckUpdate": "float(min=0, default=0)",
 		"profile_%s" % curBD: 'string(default="default")',
-		"keyboardLayout_%s" % curBD: "string(default=\"?\")",
+		"keyboardLayout_%s" % curBD: 'string(default="?")',
 		"modifierKeysFeedback": "option({CHOICE_none}, {CHOICE_braille}, {CHOICE_speech}, {CHOICE_speechAndBraille}, default={CHOICE_braille})".format(
 			CHOICE_none=CHOICE_none,
 			CHOICE_braille=CHOICE_braille,
 			CHOICE_speech=CHOICE_speech,
-			CHOICE_speechAndBraille=CHOICE_speechAndBraille
+			CHOICE_speechAndBraille=CHOICE_speechAndBraille,
 		),
 		"beepsModifiers": "boolean(default=False)",
 		"volumeChangeFeedback": "option({CHOICE_none}, {CHOICE_braille}, {CHOICE_speech}, {CHOICE_speechAndBraille}, default={CHOICE_braille})".format(
 			CHOICE_none=CHOICE_none,
 			CHOICE_braille=CHOICE_braille,
 			CHOICE_speech=CHOICE_speech,
-			CHOICE_speechAndBraille=CHOICE_speechAndBraille
+			CHOICE_speechAndBraille=CHOICE_speechAndBraille,
 		),
 		"brailleDisplay1": 'string(default="last")',
 		"brailleDisplay2": 'string(default="last")',
@@ -122,7 +149,8 @@ def getConfspec():
 		"rightMarginCells_%s" % curBD: "integer(min=0, default=0, max=80)",
 		"reverseScrollBtns": "boolean(default=False)",
 		"autoScroll": {
-			"delay_%s" % curBD: f"integer(min={MIN_AUTO_SCROLL_DELAY}, default={DEFAULT_AUTO_SCROLL_DELAY}, max={MAX_AUTO_SCROLL_DELAY})",
+			"delay_%s"
+			% curBD: f"integer(min={MIN_AUTO_SCROLL_DELAY}, default={DEFAULT_AUTO_SCROLL_DELAY}, max={MAX_AUTO_SCROLL_DELAY})",
 			"stepDelayChange": f"integer(min={MIN_STEP_DELAY_CHANGE}, default={DEFAULT_STEP_DELAY_CHANGE}, max={MAX_STEP_DELAY_CHANGE})",
 			"adjustToContent": "boolean(default=False)",
 			"ignoreBlankLine": "boolean(default=True)",
@@ -132,7 +160,7 @@ def getConfspec():
 			CHOICE_none=CHOICE_none,
 			CHOICE_focus=CHOICE_focus,
 			CHOICE_review=CHOICE_review,
-			CHOICE_focusAndReview=CHOICE_focusAndReview
+			CHOICE_focusAndReview=CHOICE_focusAndReview,
 		),
 		"smartCapsLock": "boolean(default=True)",
 		"stopSpeechScroll": "boolean(default=False)",
@@ -148,12 +176,13 @@ def getConfspec():
 			"backup_autoTether": "boolean(default=True)",
 		},
 		"inputTableShortcuts": 'string(default="?")',
-		"inputTables": 'string(default="%s")' % config.conf["braille"]["inputTable"] + ", unicode-braille.utb",
+		"inputTables": 'string(default="%s")' % config.conf["braille"]["inputTable"]
+		+ ", unicode-braille.utb",
 		"outputTables": "string(default=%s)" % config.conf["braille"]["translationTable"],
 		"tabSpace": "boolean(default=False)",
 		f"tabSize_{curBD}": "integer(min=1, default=2, max=42)",
 		"undefinedCharsRepr": {
-			"method": f"integer(min=0, default=8)",
+			"method": "integer(min=0, default=8)",
 			"hardSignPatternValue": "string(default=??)",
 			"hardDotPatternValue": "string(default=6-12345678)",
 			"desc": "boolean(default=True)",
@@ -241,7 +270,7 @@ def getConfspec():
 				"frames": REPORT_CHOICES,
 				"clickable": REPORT_CHOICES,
 				"comments": REPORT_CHOICES,
-				"revisions": REPORT_CHOICES
+				"revisions": REPORT_CHOICES,
 			},
 			"tags": {
 				"invalid-spelling": "string(default=%s)" % TAG_SEPARATOR.join(["⣏⠑⣹", "⣏⡑⣹"]),
@@ -264,7 +293,7 @@ def getConfspec():
 				"revision-insertion": "string(default=%s)" % TAG_SEPARATOR.join(["⣏+⣹", "⣏/⣹"]),
 				"revision-deletion": "string(default=%s)" % TAG_SEPARATOR.join(["⣏-⣹", "⣏/⣹"]),
 				"comments": "string(default=%s)" % TAG_SEPARATOR.join(["⣏com⣹", "⣏/⣹"]),
-			}
+			},
 		},
 		"quickLaunches": {},
 		"advancedInputMode": {
@@ -285,8 +314,10 @@ def getConfspec():
 		},
 	}
 
+
 def loadPreferedTables():
 	from . import utils
+
 	global inputTables, outputTables
 	listInputTables = [table[0] for table in brailleTables.listTables() if table.input]
 	listOutputTables = [table[0] for table in brailleTables.listTables() if table.output]
@@ -296,9 +327,9 @@ def loadPreferedTables():
 	inputTables = config.conf["brailleExtender"]["inputTables"]
 	outputTables = config.conf["brailleExtender"]["outputTables"]
 	if not isinstance(inputTables, list):
-		inputTables = inputTables.replace(', ', ',').split(',')
+		inputTables = inputTables.replace(", ", ",").split(",")
 	if not isinstance(outputTables, list):
-		outputTables = outputTables.replace(', ', ',').split(',')
+		outputTables = outputTables.replace(", ", ",").split(",")
 	inputTables = [t for t in inputTables if t in listInputTables]
 	outputTables = [t for t in outputTables if t in listOutputTables]
 	if utils.supportsAutomaticBrailleTables():
@@ -319,7 +350,8 @@ def loadConf():
 	curBD = braille.handler.display.name
 	if "brailleTables" in config.conf["brailleExtender"]:
 		del config.conf["brailleExtender"]["brailleTables"]
-	try: brlextConf = config.conf["brailleExtender"].copy()
+	try:
+		brlextConf = config.conf["brailleExtender"].copy()
 	except configobj.validate.VdtValueError:
 		config.conf["brailleExtender"]["updateChannel"] = "dev"
 		brlextConf = config.conf["brailleExtender"].copy()
@@ -335,8 +367,12 @@ def loadConf():
 		config.conf["brailleExtender"]["autoScrollDelay_%s" % curBD] = 3000
 	if "keyboardLayout_%s" % curBD not in brlextConf.keys():
 		config.conf["brailleExtender"]["keyboardLayout_%s" % curBD] = "?"
-	confGen = (r"%s\%s\%s\profile.ini" % (profilesDir, curBD, config.conf["brailleExtender"]["profile_%s" % curBD]))
-	if (curBD != "noBraille" and os.path.exists(confGen)):
+	confGen = r"%s\%s\%s\profile.ini" % (
+		profilesDir,
+		curBD,
+		config.conf["brailleExtender"]["profile_%s" % curBD],
+	)
+	if curBD != "noBraille" and os.path.exists(confGen):
 		profileFileExists = True
 		confspec = config.ConfigObj("", encoding="UTF-8", list_values=False)
 		iniProfile = config.ConfigObj(confGen, configspec=confspec, indent_type="\t", encoding="UTF-8")
@@ -345,44 +381,64 @@ def loadConf():
 			log.exception("Malformed configuration file")
 			return False
 	else:
-		if curBD != "noBraille": log.warn("%s inaccessible" % confGen)
-		else: log.debug("No braille display present")
+		if curBD != "noBraille":
+			log.warn("%s inaccessible" % confGen)
+		else:
+			log.debug("No braille display present")
 
 	limitCellsRight = int(config.conf["brailleExtender"]["rightMarginCells_%s" % curBD])
-	if (backupDisplaySize-limitCellsRight <= backupDisplaySize and limitCellsRight > 0):
-		braille.handler.displaySize = backupDisplaySize-limitCellsRight
-	if not noUnicodeTable: loadPreferedTables()
-	if config.conf["brailleExtender"]["inputTableShortcuts"] not in tablesUFN: config.conf["brailleExtender"]["inputTableShortcuts"] = '?'
+	if backupDisplaySize - limitCellsRight <= backupDisplaySize and limitCellsRight > 0:
+		braille.handler.displaySize = backupDisplaySize - limitCellsRight
+	if not noUnicodeTable:
+		loadPreferedTables()
+	if config.conf["brailleExtender"]["inputTableShortcuts"] not in tablesUFN:
+		config.conf["brailleExtender"]["inputTableShortcuts"] = "?"
 	return True
+
 
 def loadGestures():
 	if gesturesFileExists:
 		inputTable = config.conf["braille"]["inputTable"]
 		if inputTable == "auto" and not noUnicodeTable:
 			inputTable = default_braille_table_file_for_cur_language(is_input=True)
-		if os.path.exists(os.path.join(profilesDir, "_BrowseMode", inputTable + ".ini")): GLng = inputTable
-		else: GLng = 'en-us-comp8.utb'
+		if os.path.exists(os.path.join(profilesDir, "_BrowseMode", inputTable + ".ini")):
+			GLng = inputTable
+		else:
+			GLng = "en-us-comp8.utb"
 		gesturesBMPath = os.path.join(profilesDir, "_BrowseMode", "common.ini")
 		gesturesLangBMPath = os.path.join(profilesDir, "_BrowseMode/", GLng + ".ini")
 		inputCore.manager.localeGestureMap.load(gesturesBDPath())
 		for fn in [gesturesBMPath, gesturesLangBMPath]:
 			f = open(fn)
-			tmp = [line.strip().replace(' ', '').replace('$', iniProfile["general"]["nameBK"]).replace('=', '=br(%s):' % curBD) for line in f if line.strip() and not line.strip().startswith('#') and line.count('=') == 1]
-			tmp = {k.split('=')[0]: k.split('=')[1] for k in tmp}
-		inputCore.manager.localeGestureMap.update({'browseMode.BrowseModeTreeInterceptor': tmp})
+			tmp = [
+				line.strip()
+				.replace(" ", "")
+				.replace("$", iniProfile["general"]["nameBK"])
+				.replace("=", "=br(%s):" % curBD)
+				for line in f
+				if line.strip() and not line.strip().startswith("#") and line.count("=") == 1
+			]
+			tmp = {k.split("=")[0]: k.split("=")[1] for k in tmp}
+		inputCore.manager.localeGestureMap.update({"browseMode.BrowseModeTreeInterceptor": tmp})
 
-def gesturesBDPath(a = False):
-	l = ['\\'.join([profilesDir, curBD, config.conf["brailleExtender"]["profile_%s" % curBD], "gestures.ini"]),
-	'\\'.join([profilesDir, curBD, "default", "gestures.ini"])]
-	if a: return "; ".join(l)
-	for p in l:
-		if os.path.exists(p): return p
-	return '?'
+
+def gesturesBDPath(a=False):
+	gesture_paths = [
+		"\\".join([profilesDir, curBD, config.conf["brailleExtender"]["profile_%s" % curBD], "gestures.ini"]),
+		"\\".join([profilesDir, curBD, "default", "gestures.ini"]),
+	]
+	if a:
+		return "; ".join(gesture_paths)
+	for p in gesture_paths:
+		if os.path.exists(p):
+			return p
+	return "?"
+
 
 def initGestures():
 	global gesturesFileExists, iniGestures
-	if profileFileExists and gesturesBDPath() != '?':
-		log.debug('Main gestures map found')
+	if profileFileExists and gesturesBDPath() != "?":
+		log.debug("Main gestures map found")
 		confGen = gesturesBDPath()
 		confspec = config.ConfigObj("", encoding="UTF-8", list_values=False)
 		iniGestures = config.ConfigObj(confGen, configspec=confspec, indent_type="\t", encoding="UTF-8")
@@ -390,46 +446,73 @@ def initGestures():
 		if result is not True:
 			log.exception("Malformed configuration file")
 			gesturesFileExists = False
-		else: gesturesFileExists = True
+		else:
+			gesturesFileExists = True
 	else:
-		if curBD != "noBraille": log.warn('No main gestures map (%s) found' % gesturesBDPath(1))
+		if curBD != "noBraille":
+			log.warn("No main gestures map (%s) found" % gesturesBDPath(1))
 		gesturesFileExists = False
 	if gesturesFileExists:
 		for g in iniGestures["globalCommands.GlobalCommands"]:
-			if isinstance(
-					iniGestures["globalCommands.GlobalCommands"][g],
-					list):
-				for h in range(
-						len(iniGestures["globalCommands.GlobalCommands"][g])):
-					iniGestures[inputCore.normalizeGestureIdentifier(
-						str(iniGestures["globalCommands.GlobalCommands"][g][h]))] = g
-			elif ('kb:' in g and g not in ["kb:alt', 'kb:control', 'kb:windows', 'kb:control', 'kb:applications"] and 'br(' + curBD + '):' in str(iniGestures["globalCommands.GlobalCommands"][g])):
-				iniGestures[inputCore.normalizeGestureIdentifier(str(
-					iniGestures["globalCommands.GlobalCommands"][g])).replace('br(' + curBD + '):', '')] = g
+			if isinstance(iniGestures["globalCommands.GlobalCommands"][g], list):
+				for h in range(len(iniGestures["globalCommands.GlobalCommands"][g])):
+					iniGestures[
+						inputCore.normalizeGestureIdentifier(
+							str(iniGestures["globalCommands.GlobalCommands"][g][h])
+						)
+					] = g
+			elif (
+				"kb:" in g
+				and g not in ["kb:alt', 'kb:control', 'kb:windows', 'kb:control', 'kb:applications"]
+				and "br(" + curBD + "):" in str(iniGestures["globalCommands.GlobalCommands"][g])
+			):
+				iniGestures[
+					inputCore.normalizeGestureIdentifier(
+						str(iniGestures["globalCommands.GlobalCommands"][g])
+					).replace("br(" + curBD + "):", "")
+				] = g
 	return gesturesFileExists, iniGestures
 
+
 def isContractedTable(table):
-	if not table in tablesFN: return False
+	if table not in tablesFN:
+		return False
 	tablePos = tablesFN.index(table)
-	if brailleTables.listTables()[tablePos].contracted: return True
+	if brailleTables.listTables()[tablePos].contracted:
+		return True
 	return False
 
+
 def getKeyboardLayout():
-	if (config.conf["brailleExtender"]["keyboardLayout_%s" % curBD] is not None
-	and config.conf["brailleExtender"]["keyboardLayout_%s" % curBD] in iniProfile['keyboardLayouts'].keys()):
-		return iniProfile['keyboardLayouts'].keys().index(config.conf["brailleExtender"]["keyboardLayout_%s" % curBD])
+	if (
+		config.conf["brailleExtender"]["keyboardLayout_%s" % curBD] is not None
+		and config.conf["brailleExtender"]["keyboardLayout_%s" % curBD]
+		in iniProfile["keyboardLayouts"].keys()
+	):
+		return (
+			iniProfile["keyboardLayouts"]
+			.keys()
+			.index(config.conf["brailleExtender"]["keyboardLayout_%s" % curBD])
+		)
 	return 0
+
 
 def getTabSize():
 	size = config.conf["brailleExtender"]["tabSize_%s" % curBD]
-	if size < 0: size = 2
+	if size < 0:
+		size = 2
 	return size
+
 
 # remove old config files
 cfgFile = globalVars.appArgs.configPath + r"\BrailleExtender.conf"
 cfgFileAttribra = globalVars.appArgs.configPath + r"\attribra-BE.ini"
-if os.path.exists(cfgFile): os.remove(cfgFile)
-if os.path.exists(cfgFileAttribra): os.remove(cfgFileAttribra)
+if os.path.exists(cfgFile):
+	os.remove(cfgFile)
+if os.path.exists(cfgFileAttribra):
+	os.remove(cfgFileAttribra)
 
-if not os.path.exists(configDir): os.mkdir(configDir)
-if not os.path.exists(os.path.join(configDir, "brailleDicts")): os.mkdir(os.path.join(configDir, "brailleDicts"))
+if not os.path.exists(configDir):
+	os.mkdir(configDir)
+if not os.path.exists(os.path.join(configDir, "brailleDicts")):
+	os.mkdir(os.path.join(configDir, "brailleDicts"))

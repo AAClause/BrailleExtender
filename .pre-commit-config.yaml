@@ -5,3 +5,9 @@ repos:
       - id: check-ast
       - id: check-case-conflict
       - id: check-yaml
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: "v0.15.12"
+    hooks:
+      - id: ruff-check
+        args: ["--fix", "--ignore", "D"]
+      - id: ruff-format

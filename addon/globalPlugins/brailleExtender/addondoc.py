@@ -21,7 +21,16 @@ import ui
 import random
 from .undefinedchars import CHOICES_LABELS
 from . import utils
-from .common import addonDesc, addonGitHubURL, addonName, addonSummary, addonURL, addonVersion, punctuationSeparator
+from .common import (
+	addonDesc,
+	addonGitHubURL,
+	addonName,
+	addonSummary,
+	addonURL,
+	addonVersion,
+	punctuationSeparator,
+)
+
 
 def escape(text: str) -> str:
 	"""Escape HTML special characters in text."""
@@ -31,19 +40,21 @@ def escape(text: str) -> str:
 
 def initializeRandomChar() -> None:
 	global chosenChar
-	chosenChar = random.choice("#$£€=+()*,;:.?!/\"&")
+	chosenChar = random.choice('#$£€=+()*,;:.?!/"&')
+
 
 URLHUC = "https://danielmayr.at/huc/"
 chosenChar = None
+
 
 def getFeaturesDoc() -> str:
 	"""Return HTML documentation for BrailleExtender features."""
 	undefinedCharsSamples = [
 		[_("Character"), "HUC8", _("Hexadecimal"), _("Decimal"), _("Octal"), _("Binary")],
-		['👍', "⣭⢤⡙", "⠭1f44d or ⠓1f44d", "⠙128077", "⠕372115", "⠃11111010001001101"],
-		['😀', "⣭⡤⣺", "⠭1f600 or ⠓1f600", "⠙128512", "⠕373000", "⠃11111011000000000"],
-		['🍑', "⣭⠤⠕", "⠭1f351 or ⠓1f351", "⠙127825", "⠕371521", "⠃11111001101010001"],
-		['🌊', "⣭⠤⠺", "⠭1f30a or ⠓1f30a", "⠙127754", "⠕371412", "⠃11111001100001010"]
+		["👍", "⣭⢤⡙", "⠭1f44d or ⠓1f44d", "⠙128077", "⠕372115", "⠃11111010001001101"],
+		["😀", "⣭⡤⣺", "⠭1f600 or ⠓1f600", "⠙128512", "⠕373000", "⠃11111011000000000"],
+		["🍑", "⣭⠤⠕", "⠭1f351 or ⠓1f351", "⠙127825", "⠕371521", "⠃11111001101010001"],
+		["🌊", "⣭⠤⠺", "⠭1f30a or ⠓1f30a", "⠙127754", "⠕371412", "⠃11111001100001010"],
 	]
 	for i in range(1, len(undefinedCharsSamples)):
 		ch = undefinedCharsSamples[i][0]
@@ -51,56 +62,92 @@ def getFeaturesDoc() -> str:
 
 	braillePattern = config.conf["brailleExtender"]["advancedInputMode"]["escapeSignUnicodeValue"]
 
-	contextualOption = _("Show punctuation/symbol &name for undefined characters if available").replace('&', '')
+	contextualOption = _("Show punctuation/symbol &name for undefined characters if available").replace(
+		"&", ""
+	)
 	features = {
-	_("Speech History Mode"): [
-		"<p>",
-		_("This mode allows to review the last announcements that have been spoken by NVDA."),
-		"<br />",
-		_("To enable this mode, you can use the appropriate toggle command or the basic gesture NVDA+Control+t."),
-		"<br />",
-		_("In this mode, you can use:"),
-		"</p><ul>",
-			"<li>" + _("the first routing cursor to copy the current announcement to the Clipboard.") + "</li>",
-			"<li>" + _("the last routing cursor to show the current announcement in a browseable message.") + "</li>",
+		_("Speech History Mode"): [
+			"<p>",
+			_("This mode allows to review the last announcements that have been spoken by NVDA."),
+			"<br />",
+			_(
+				"To enable this mode, you can use the appropriate toggle command or the basic gesture NVDA+Control+t."
+			),
+			"<br />",
+			_("In this mode, you can use:"),
+			"</p><ul>",
+			"<li>"
+			+ _("the first routing cursor to copy the current announcement to the Clipboard.")
+			+ "</li>",
+			"<li>"
+			+ _("the last routing cursor to show the current announcement in a browseable message.")
+			+ "</li>",
 			"<li>" + _("the other routing cursors to navigate through history entries.") + "</li>",
-		"</ul><p>",
-			_('Please note that specific settings are available for this feature under the category "Speech History Mode".'),
-		"</p>"
-	],
+			"</ul><p>",
+			_(
+				'Please note that specific settings are available for this feature under the category "Speech History Mode".'
+			),
+			"</p>",
+		],
 		_("Representation of undefined characters"): [
 			"<p>",
-			_("The extension allows you to customize how an undefined character should be represented within a braille table. To do so, go to the — Representation of undefined characters — settings. You can choose between the following representations:"),
+			_(
+				"The extension allows you to customize how an undefined character should be represented within a braille table. To do so, go to the — Representation of undefined characters — settings. You can choose between the following representations:"
+			),
 			"</p><ul>",
-			''.join([f"<li>{choice}</li>" for choice in CHOICES_LABELS.values()]),
+			"".join([f"<li>{choice}</li>" for choice in CHOICES_LABELS.values()]),
 			"</ul><p>",
 			_("You can also combine this option with the “describe the character if possible” setting."),
 			"</p><p>",
 			_("Notes:"),
 			"</p><ul>",
-			"<li>" + _("To distinguish the undefined set of characters while maximizing space, the best combination is the usage of the HUC8 representation without checking the “{contextualOption}” option.").format(contextualOption=contextualOption) + "</li>",
-			"<li>" + _("To learn more about the HUC representation, see {url}").format(url=f"<br />{URLHUC}") + "</li>",
-			"<li>" + _("Keep in mind that definitions in tables and those in your table dictionaries take precedence over character descriptions, which also take precedence over the chosen representation for undefined characters.") + "</li>",
-			"</ul>"
+			"<li>"
+			+ _(
+				"To distinguish the undefined set of characters while maximizing space, the best combination is the usage of the HUC8 representation without checking the “{contextualOption}” option."
+			).format(contextualOption=contextualOption)
+			+ "</li>",
+			"<li>"
+			+ _("To learn more about the HUC representation, see {url}").format(url=f"<br />{URLHUC}")
+			+ "</li>",
+			"<li>"
+			+ _(
+				"Keep in mind that definitions in tables and those in your table dictionaries take precedence over character descriptions, which also take precedence over the chosen representation for undefined characters."
+			)
+			+ "</li>",
+			"</ul>",
 		],
 		_("Getting Current Character Info"): [
 			"<p>",
-			_("This feature reports technical details for the character at the review cursor using the current input braille table, including:"),
+			_(
+				"This feature reports technical details for the character at the review cursor using the current input braille table, including:"
+			),
 			"<br />",
-			_("the HUC8 and HUC6 representations; the hexadecimal, decimal, octal or binary values; A description of the character if possible; the Unicode braille representation and the braille pattern dots."),
+			_(
+				"the HUC8 and HUC6 representations; the hexadecimal, decimal, octal or binary values; A description of the character if possible; the Unicode braille representation and the braille pattern dots."
+			),
 			"</p><p>",
-			_("Pressing the defined gesture associated to this function once shows you the information in a flash message and a double-press displays the same information in a virtual NVDA buffer."),
+			_(
+				"Pressing the defined gesture associated to this function once shows you the information in a flash message and a double-press displays the same information in a virtual NVDA buffer."
+			),
 			"<br />",
-			_("On supported displays the defined gesture is ⡉+space. No system gestures are defined by default."),
+			_(
+				"On supported displays the defined gesture is ⡉+space. No system gestures are defined by default."
+			),
 			"</p><p>",
-			_("For example, for the '{chosenChar}' character, we will get the following information:").format(chosenChar=chosenChar),
+			_("For example, for the '{chosenChar}' character, we will get the following information:").format(
+				chosenChar=chosenChar
+			),
 			"<br /><blockquote><pre>" + utils.currentCharDesc(chosenChar, 0) + "</pre></blockquote></p>",
 		],
 		_("Advanced braille input"): [
 			"<p>",
-			_("This feature allows you to enter any character from its HUC8 representation or its hexadecimal/decimal/octal/binary value. Moreover, it allows you to develop abbreviations. To use this function, enter the advanced input mode and then enter the desired pattern. Default gestures: NVDA+Windows+i or ⡊+space (on supported displays). Press the same gesture to exit this mode. Alternatively, an option allows you to automatically exit this mode after entering a single pattern. "),
+			_(
+				"This feature allows you to enter any character from its HUC8 representation or its hexadecimal/decimal/octal/binary value. Moreover, it allows you to develop abbreviations. To use this function, enter the advanced input mode and then enter the desired pattern. Default gestures: NVDA+Windows+i or ⡊+space (on supported displays). Press the same gesture to exit this mode. Alternatively, an option allows you to automatically exit this mode after entering a single pattern. "
+			),
 			"</p><p>",
-			_("If you want to enter a character from its HUC8 representation, simply enter the HUC8 pattern. Since a HUC8 sequence must fit on 3 or 4 cells, the interpretation will be performed each time 3 or 4 dot combinations are entered. If you wish to enter a character from its hexadecimal, decimal, octal or binary value, do the following:"),
+			_(
+				"If you want to enter a character from its HUC8 representation, simply enter the HUC8 pattern. Since a HUC8 sequence must fit on 3 or 4 cells, the interpretation will be performed each time 3 or 4 dot combinations are entered. If you wish to enter a character from its hexadecimal, decimal, octal or binary value, do the following:"
+			),
 			"</p><ol>",
 			"<li>" + _("Enter {braillePattern}").format(braillePattern=braillePattern) + "</li>",
 			"<li>" + _("Specify the basis as follows") + f"{punctuationSeparator}:",
@@ -110,26 +157,41 @@ def getFeaturesDoc() -> str:
 			f"<li>⠕{punctuationSeparator}: " + _("for an octal value") + "</li>",
 			f"<li>⠃{punctuationSeparator}: " + _("for a binary value") + "</li>",
 			"</ul></li>",
-			"<li>" + _("Enter the value of the character according to the previously selected basis.") + "</li>",
+			"<li>"
+			+ _("Enter the value of the character according to the previously selected basis.")
+			+ "</li>",
 			"<li>" + _("Press Space to validate.") + "</li>",
 			"</ol>",
 			"<p>",
-			_('For abbreviations, you must first add them in the dialog box — Advanced input mode dictionary —. Then, you just have to enter your abbreviation and press space to expand it. For example, you can define the following abbreviations: "⠎⠺" with "sandwich", "⠋⠛⠋⠗" to "🇫🇷".'),
+			_(
+				'For abbreviations, you must first add them in the dialog box — Advanced input mode dictionary —. Then, you just have to enter your abbreviation and press space to expand it. For example, you can define the following abbreviations: "⠎⠺" with "sandwich", "⠋⠛⠋⠗" to "🇫🇷".'
+			),
 			"</p><p>",
 			_("Here are some examples of sequences to be entered for given characters:"),
 			"</p><table>",
-			''.join(["<tr>%s</tr>" % (''.join(["<{0}>{1}</{0}>".format("th" if i == 0 else "td", e) for e in l])) for i, l in enumerate(undefinedCharsSamples)]),
+			"".join(
+				[
+					"<tr>%s</tr>"
+					% ("".join(["<{0}>{1}</{0}>".format("th" if i == 0 else "td", e) for e in row_cells]))
+					for i, row_cells in enumerate(undefinedCharsSamples)
+				]
+			),
 			"</table><p>",
 			_("Note: the HUC6 input is currently not supported."),
 			"</p>",
 		],
 		_("One-hand mode"): [
 			"<p>",
-			_("This feature allows you to compose a cell in several steps. This can be activated in the general settings of the extension's preferences or on the fly using NVDA+Windows+h gesture by default (⡂+space on supported displays). Three input methods are available."),
+			_(
+				"This feature allows you to compose a cell in several steps. This can be activated in the general settings of the extension's preferences or on the fly using NVDA+Windows+h gesture by default (⡂+space on supported displays). Three input methods are available."
+			),
 			"<h4>" + _("Method #1: fill a cell in 2 stages on both sides") + "</h4>",
 			"<p>",
-			_("With this method, type the left side dots, then the right side dots. If one side is empty, type the dots correspondig to the opposite side twice, or type the dots corresponding to the non-empty side in 2 steps."),
-			"<br />", _("For example:"),
+			_(
+				"With this method, type the left side dots, then the right side dots. If one side is empty, type the dots correspondig to the opposite side twice, or type the dots corresponding to the non-empty side in 2 steps."
+			),
+			"<br />",
+			_("For example:"),
 			"</p><ul>",
 			"<li>" + _("For ⠛: press dots 1-2 then dots 4-5.") + "</li>",
 			"<li>" + _("For ⠃: press dots 1-2 then dots 1-2, or dot 1 then dot 2.") + "</li>",
@@ -137,17 +199,25 @@ def getFeaturesDoc() -> str:
 			"</ul>",
 			"<h4>" + _("Method #2: fill a cell in two stages on one side (Space = empty side)") + "</h4>",
 			"<p>",
-			_("Using this method, you can compose a cell with one hand, regardless of which side of the Braille keyboard you choose. The first step allows you to enter dots 1-2-3-7 and the second one 4-5-6-8. If one side is empty, press space. An empty cell will be obtained by pressing the space key twice."),
+			_(
+				"Using this method, you can compose a cell with one hand, regardless of which side of the Braille keyboard you choose. The first step allows you to enter dots 1-2-3-7 and the second one 4-5-6-8. If one side is empty, press space. An empty cell will be obtained by pressing the space key twice."
+			),
 			"<br />" + _("For example:"),
 			"</p><ul>",
 			"<li>" + _("For ⠛: press dots 1-2 then dots 1-2, or dots 4-5 then dots 4-5.") + "</li>",
-"<li>" + _("For ⠃: press dots 1-2 then space, or 4-5 then space.") + "</li>",
-"<li>" + _("For ⠘: press space then 1-2, or space then dots 4-5.") + "</li>",
+			"<li>" + _("For ⠃: press dots 1-2 then space, or 4-5 then space.") + "</li>",
+			"<li>" + _("For ⠘: press space then 1-2, or space then dots 4-5.") + "</li>",
 			"</ul>",
-			"<h4>" + _("Method #3: fill a cell dots by dots (each dot is a toggle, press Space to validate the character)") + "</h4>",
+			"<h4>"
+			+ _(
+				"Method #3: fill a cell dots by dots (each dot is a toggle, press Space to validate the character)"
+			)
+			+ "</h4>",
 			"<p>",
-			_("In this mode, each dot is a toggle. You must press the space key as soon as the cell you have entered is the desired one to input the character. Thus, the more dots are contained in the cell, the more ways you have to enter the character."),
-			"<br />" + _("For example, for ⠛, you can compose the cell in the following ways") + ':',
+			_(
+				"In this mode, each dot is a toggle. You must press the space key as soon as the cell you have entered is the desired one to input the character. Thus, the more dots are contained in the cell, the more ways you have to enter the character."
+			),
+			"<br />" + _("For example, for ⠛, you can compose the cell in the following ways") + ":",
 			"</p><ul>",
 			"<li>" + _("Dots 1-2, then dots 4-5, then space.") + "</li>",
 			"<li>" + _("Dots 1-2-3, then dot 3 (to correct), then dots 4-5, then space.") + "</li>",
@@ -155,13 +225,14 @@ def getFeaturesDoc() -> str:
 			"<li>" + _("Dots 1-2-4, then dot 5, then space.") + "</li>",
 			"<li>" + _("Dot 2, then dot 1, then dot 5, then dot 4, and then space.") + "</li>",
 			"<li>" + _("Etc.") + "</li>",
-			"</ul>"
-		]
+			"</ul>",
+		],
 	}
 	out = ""
 	for title, desc in features.items():
 		out += f"<h3>{title}</h3>{''.join(desc)}"
 	return out
+
 
 class AddonDoc:
 	instanceGP = None
@@ -181,12 +252,14 @@ class AddonDoc:
 		if addoncfg.gesturesFileExists:
 			brailleDisplayDriverName = addoncfg.curBD.capitalize()
 			profileName = "default"
-			doc += ''.join([
-				"<p>",
-				_("Driver loaded") + f"{punctuationSeparator}: {brailleDisplayDriverName}" + "<br />",
-				_("Profile") + f"{punctuationSeparator}: {profileName}",
-				"</p>"
-			])
+			doc += "".join(
+				[
+					"<p>",
+					_("Driver loaded") + f"{punctuationSeparator}: {brailleDisplayDriverName}" + "<br />",
+					_("Profile") + f"{punctuationSeparator}: {profileName}",
+					"</p>",
+				]
+			)
 			mKB = OrderedDict()
 			mNV = OrderedDict()
 			mW = OrderedDict()
@@ -204,14 +277,10 @@ class AddonDoc:
 			doc += self.translateLst(mW)
 			doc += ("<h3>" + _("Standard NVDA commands") + " (%d)</h3>") % len(mNV)
 			doc += self.translateLst(mNV)
-			doc += "<h3>{} ({})</h3>".format(
-				_("Modifier keys"), len(addoncfg.iniProfile["modifierKeys"])
-			)
+			doc += "<h3>{} ({})</h3>".format(_("Modifier keys"), len(addoncfg.iniProfile["modifierKeys"]))
 			doc += self.translateLst(addoncfg.iniProfile["modifierKeys"])
 			doc += "<h3>" + _("Quick navigation keys") + "</h3>"
-			doc += self.translateLst(
-				addoncfg.iniGestures["cursorManager.CursorManager"]
-			)
+			doc += self.translateLst(addoncfg.iniGestures["cursorManager.CursorManager"])
 			doc += "<h3>" + _("Rotor feature") + "</h3>"
 			doc += self.translateLst(
 				{
@@ -220,9 +289,7 @@ class AddonDoc:
 					if "rotor" in k.lower()
 				}
 			) + self.translateLst(addoncfg.iniProfile["rotor"])
-			doc += ("<h3>" + _("Gadget commands") + " (%d)</h3>") % (
-                    len(addoncfg.iniProfile["miscs"]) - 2
-			)
+			doc += ("<h3>" + _("Gadget commands") + " (%d)</h3>") % (len(addoncfg.iniProfile["miscs"]) - 2)
 			doc += self.translateLst(
 				OrderedDict(
 					[
@@ -245,9 +312,7 @@ class AddonDoc:
 						re.sub(
 							"^([A-Z])",
 							lambda m: m.group(1).lower(),
-							self.getDocScript(
-								braille.handler.display.gestureMap._map[g]
-							),
+							self.getDocScript(braille.handler.display.gestureMap._map[g]),
 						)
 					),
 					punctuationSeparator,
@@ -255,19 +320,11 @@ class AddonDoc:
 			doc = re.sub(r"[  ]?;(</li>)$", r".\1", doc)
 			doc += "</ul>"
 
-			if (
-				not instanceGP.noKeyboarLayout()
-				and "keyboardLayouts" in addoncfg.iniProfile
-			):
+			if not instanceGP.noKeyboarLayout() and "keyboardLayouts" in addoncfg.iniProfile:
 				lb = instanceGP.getKeyboardLayouts()
 				doc += "<h3>{}</h3>".format(_("Keyboard configurations provided"))
-				doc += (
-					"<p>"
-					+ _("Keyboard configurations are")
-					+ punctuationSeparator
-					+ "</p><ol>"
-				)
-				doc += "".join(f"<li>{l}.</li>" for l in lb)
+				doc += "<p>" + _("Keyboard configurations are") + punctuationSeparator + "</p><ol>"
+				doc += "".join(f"<li>{layout_name}.</li>" for layout_name in lb)
 				doc += "</ol>"
 		else:
 			doc += (
@@ -277,13 +334,11 @@ class AddonDoc:
 				+ _("BrailleExtender has no gesture map yet for your braille display.")
 				+ "<br />"
 				+ _(
-					"However, you can still assign your own gestures in the \"Input Gestures\" dialog (under Preferences menu)."
+					'However, you can still assign your own gestures in the "Input Gestures" dialog (under Preferences menu).'
 				)
 				+ "</p>"
 			)
-		doc += ("<h2>" + _("Add-on gestures on the system keyboard") + " (%s)</h2>") % (
-			len(gestures) - 4
-		)
+		doc += ("<h2>" + _("Add-on gestures on the system keyboard") + " (%s)</h2>") % (len(gestures) - 4)
 		doc += "<ul>"
 		for g in [k for k in gestures if k.lower().startswith("kb:")]:
 			if g.lower() not in [
@@ -308,19 +363,29 @@ class AddonDoc:
 			_("Chinese (Taiwan)"): "蔡宗豪 Victor Cai <surfer0627@gmail.com>",
 			_("Croatian"): "Zvonimir Stanečić <zvonimirek222@yandex.com>",
 			_("Danish"): "Daniel Gartmann <dg@danielgartmann.dk>",
-			_("English and French"): "Sof <hellosof@gmail.com>, Joseph Lee, André-Abush Clause <dev@andreabc.net>, Oreonan <corentin@progaccess.net>",
-			_("German"): "Adriani Botez <adriani.botez@gmail.com>, Karl Eick <hozosch@web.de>, Rene Linke <rene.linke@hamburg.de>, Jürgen Schwingshandl <jbs@b-a-c.at>",
+			_(
+				"English and French"
+			): "Sof <hellosof@gmail.com>, Joseph Lee, André-Abush Clause <dev@andreabc.net>, Oreonan <corentin@progaccess.net>",
+			_(
+				"German"
+			): "Adriani Botez <adriani.botez@gmail.com>, Karl Eick <hozosch@web.de>, Rene Linke <rene.linke@hamburg.de>, Jürgen Schwingshandl <jbs@b-a-c.at>",
 			_("Hebrew"): "Shmuel Naaman <shmuel_naaman@yahoo.com>, Afik Sofer, David Rechtman, Pavel Kaplan",
-			_("Italian"): "Simone Dal Maso <simone.dalmaso@gmail.com>, Fabrizio Marini <marini.carlo@fastwebnet.it>",
+			_(
+				"Italian"
+			): "Simone Dal Maso <simone.dalmaso@gmail.com>, Fabrizio Marini <marini.carlo@fastwebnet.it>",
 			_("Persian"): "Mohammadreza Rashad <mohammadreza5712@gmail.com>",
 			_("Polish"): "Zvonimir Stanečić <zvonimirek222@yandex.com>, Dorota Krać",
-			_("Russian"): "Zvonimir Stanečić <zvonimirek222@yandex.com>, Pavel Kaplan <pavel46@gmail.com>, Artem Plaksin <admin@maniyax.ru>",
+			_(
+				"Russian"
+			): "Zvonimir Stanečić <zvonimirek222@yandex.com>, Pavel Kaplan <pavel46@gmail.com>, Artem Plaksin <admin@maniyax.ru>",
 			_("Spanish"): "Eric Duarte Quintanilla <https://ericdq.com/>",
 			_("Turkish"): "Umut Korkmaz <umutkork@gmail.com>",
 			_("Ukrainian"): "VovaMobile",
 		}
 		doc += (
-			"<h2>" + _("Copyrights and acknowledgements") + "</h2>"
+			"<h2>"
+			+ _("Copyrights and acknowledgements")
+			+ "</h2>"
 			+ (
 				"".join(
 					[
@@ -344,23 +409,17 @@ class AddonDoc:
 				"<ul>",
 				"<li>" + _("Speech mode feature:") + " Emil Hesmyr &lt;emilhe@viken.no&gt;" + "</li>",
 				"</ul>",
-				"<p>"
-				+ _("Code maintenance (cleanup, rewrites, optimizations) thanks to:")
-				+ "</p>",
-				"<ul>"
-					+ "<li>Joseph Lee &lt;joseph.lee22590@gmail.com&gt;</li>"
-				+ "</ul>",
-				"<p>"
-				+ _("Additional third party copyrighted code is included:")
-				+ "</p>",
+				"<p>" + _("Code maintenance (cleanup, rewrites, optimizations) thanks to:") + "</p>",
+				"<ul>" + "<li>Joseph Lee &lt;joseph.lee22590@gmail.com&gt;</li>" + "</ul>",
+				"<p>" + _("Additional third party copyrighted code is included:") + "</p>",
 				"<ul>",
 				f"<li><em>Attribra</em>{punctuationSeparator}: Copyright (C) 2017 Alberto Zanella &lt;lapostadialberto@gmail.com&gt; → https://github.com/albzan/attribra/</li>",
 				"</ul>",
 				"<p>"
 				+ _("Thanks also to")
-				+ punctuationSeparator + ": Daniel Cotto, Daniel Mayr, Dawid Pieper, Corentin, Louis...<br />",
-				_("Finally thank you very much for all your feedback and comments.")
-				+ " ☺</p>",
+				+ punctuationSeparator
+				+ ": Daniel Cotto, Daniel Mayr, Dawid Pieper, Corentin, Louis...<br />",
+				_("Finally thank you very much for all your feedback and comments.") + " ☺</p>",
 			]
 		)
 		ui.browseableMessage(doc, _("%s's documentation") % addonName, True)
@@ -382,20 +441,14 @@ class AddonDoc:
 		if isinstance(n, list):
 			n = str(n[-1][-1])
 		if n.startswith("kb:"):
-			return _(
-				"Emulates pressing %s on the system keyboard"
-			) % utils.getKeysTranslation(n)
+			return _("Emulates pressing %s on the system keyboard") % utils.getKeysTranslation(n)
 		places = [globalCommands.commands, self.instanceGP, cursorManager.CursorManager]
 		for place in places:
 			func = getattr(place, ("script_%s" % n), None)
 			if func:
 				doc = func.__doc__
 				break
-		return (
-			doc
-			if doc is not None
-			else _("description currently unavailable for this shortcut")
-		)
+		return doc if doc is not None else _("description currently unavailable for this shortcut")
 
 	def translateLst(self, lst: dict[str, Any]) -> str:
 		doc = "<ul>"

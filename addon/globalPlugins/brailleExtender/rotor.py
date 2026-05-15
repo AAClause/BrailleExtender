@@ -563,9 +563,7 @@ def should_bind_full_rotor_gestures(rotor_id: RotorId | str) -> bool:
 	return s in FULL_ROTOR_GESTURE_IDS
 
 
-def format_config_order_and_enabled(
-	order_ids: Sequence[str], checked: Sequence[bool]
-) -> Tuple[str, str]:
+def format_config_order_and_enabled(order_ids: Sequence[str], checked: Sequence[bool]) -> Tuple[str, str]:
 	order_ids = list(order_ids)
 	checked = list(checked)
 	dv = RotorId.default.value

@@ -26,7 +26,6 @@ NO_DUPLICATE = -1
 
 
 class AdvancedInputDictEntry:
-
 	def __init__(self, abreviation: str, replacement: str, table: str):
 		self.abreviation = abreviation
 		self.replacement = replacement
@@ -65,11 +64,11 @@ class AdvancedInputDictEntry:
 
 	def __repr__(self):
 		return '(abreviation="{abreviation}", replacement="{replacement}", table="{table}")'.format(
-			abreviation=self.abreviation, replacement=self.replacement, table=self.table)
+			abreviation=self.abreviation, replacement=self.replacement, table=self.table
+		)
 
 
 class AdvancedInputDict:
-
 	def __init__(self, entries=None):
 		self.entries = []
 		if entries:
@@ -83,9 +82,9 @@ class AdvancedInputDict:
 		if isinstance(entry, dict):
 			entryDict = AdvancedInputDictEntry(
 				entry["abreviation"],
-				entry["replacement"]
-				if "replacement" in entry else entry["replaceBy"],
-				entry["table"])
+				entry["replacement"] if "replacement" in entry else entry["replaceBy"],
+				entry["table"],
+			)
 		elif isinstance(entry, AdvancedInputDictEntry):
 			entryDict = entry
 		else:
@@ -176,21 +175,19 @@ def getReplacements(abreviations, strict=False):
 			out += [
 				entry
 				for entry in advancedInputDictHandler.getEntries()
-				if entry.abreviation.startswith(abreviation)
-				and entry.table in [currentInputTable, '*']
+				if entry.abreviation.startswith(abreviation) and entry.table in [currentInputTable, "*"]
 			]
 		else:
 			out += [
 				entry
 				for entry in advancedInputDictHandler.getEntries()
-				if entry.abreviation == abreviation
-				and entry.table in [currentInputTable, '*']
+				if entry.abreviation == abreviation and entry.table in [currentInputTable, "*"]
 			]
 	return out
 
 
 def translateTable(tableFilename, return_index=False):
-	if tableFilename == '*':
+	if tableFilename == "*":
 		return 0 if return_index else _("Any (all tables)")
 	for i, table in enumerate(brailleTables.listTables(), 1):
 		if not table.input:
@@ -201,7 +198,6 @@ def translateTable(tableFilename, return_index=False):
 
 
 class AdvancedInputModeDlg(gui.settingsDialogs.SettingsDialog):
-
 	# Translators: title of a dialog.
 	title = _("Advanced input mode dictionary")
 
@@ -272,11 +268,7 @@ class AdvancedInputModeDlg(gui.settingsDialogs.SettingsDialog):
 	def onSetEntries(self):
 		self.dictList.DeleteAllItems()
 		for entry in self.curDict.getEntries():
-			self.dictList.Append(
-				(entry.replacement,
-				 entry.abreviation,
-				 translateTable(
-					 entry.table)))
+			self.dictList.Append((entry.replacement, entry.abreviation, translateTable(entry.table)))
 		self.dictList.SetFocus()
 
 	def _isValid(self, entryIndex=NO_DUPLICATE):
@@ -286,10 +278,13 @@ class AdvancedInputModeDlg(gui.settingsDialogs.SettingsDialog):
 				msg = _("Don't get tired, this entry already exists!")
 				gui.messageBox(msg, addonName, wx.OK | wx.ICON_INFORMATION)
 				return True
-			msg = _('The abreviation "{abreviation}" is already used for "{replacement}". Do you want to update the existing entry?').format(
-				abreviation=self.entry.abreviation, replacement=self.curDict.entries[duplicateIndex].replacement)
-			if gui.messageBox(msg, addonName, wx.YES_NO |
-							  wx.ICON_INFORMATION) == wx.NO:
+			msg = _(
+				'The abreviation "{abreviation}" is already used for "{replacement}". Do you want to update the existing entry?'
+			).format(
+				abreviation=self.entry.abreviation,
+				replacement=self.curDict.entries[duplicateIndex].replacement,
+			)
+			if gui.messageBox(msg, addonName, wx.YES_NO | wx.ICON_INFORMATION) == wx.NO:
 				return False
 		return True
 
@@ -350,7 +345,7 @@ class AdvancedInputModeDlg(gui.settingsDialogs.SettingsDialog):
 		try:
 			os.startfile(PATH_DICT)
 		except OSError:
-			os.popen('notepad "%s"' % dictPath)
+			os.popen('notepad "%s"' % PATH_DICT)
 
 	def onReloadDictClick(self, event):
 		self.curDict.terminate()
@@ -372,7 +367,6 @@ class AdvancedInputModeDlg(gui.settingsDialogs.SettingsDialog):
 
 
 class DictionaryEntryDlg(wx.Dialog):
-
 	# Translators: This is the label for the edit dictionary entry dialog.
 	def __init__(self, parent=None, title=_("Edit Dictionary Entry")):
 		super().__init__(parent, title=title)
@@ -381,24 +375,19 @@ class DictionaryEntryDlg(wx.Dialog):
 		# Translators: This is a label for an edit field in add dictionary
 		# entry dialog.
 		abreviationLabelText = _("&Abreviation:")
-		self.abreviationTextCtrl = sHelper.addLabeledControl(
-			abreviationLabelText, wx.TextCtrl
-		)
+		self.abreviationTextCtrl = sHelper.addLabeledControl(abreviationLabelText, wx.TextCtrl)
 		# Translators: This is a label for an edit field in add dictionary
 		# entry dialog.
 		replacementLabelText = _("&Replace by:")
-		self.replacementTextCtrl = sHelper.addLabeledControl(
-			replacementLabelText, wx.TextCtrl
-		)
+		self.replacementTextCtrl = sHelper.addLabeledControl(replacementLabelText, wx.TextCtrl)
 
 		label = _("Input table:")
-		choices = [translateTable('*')]
+		choices = [translateTable("*")]
 		choices.extend([table.displayName for table in brailleTables.listTables() if table.input])
 		self.table = sHelper.addLabeledControl(label, wx.Choice, choices=choices)
 		self.table.SetSelection(0)
 
-		sHelper.addDialogDismissButtons(
-			self.CreateButtonSizer(wx.OK | wx.CANCEL))
+		sHelper.addDialogDismissButtons(self.CreateButtonSizer(wx.OK | wx.CANCEL))
 
 		mainSizer.Add(sHelper.sizer, border=20, flag=wx.ALL)
 		mainSizer.Fit(self)
@@ -411,25 +400,24 @@ class DictionaryEntryDlg(wx.Dialog):
 		replacement = self.replacementTextCtrl.GetValue()
 		msg = None
 		if not abreviation:
-			msg = _('The abreviation field is empty, please enter something.')
+			msg = _("The abreviation field is empty, please enter something.")
 			self.abreviationTextCtrl.SetFocus()
 		if not replacement:
-			msg = _('The remplacement field is empty, please enter something.')
+			msg = _("The remplacement field is empty, please enter something.")
 			self.replacementTextCtrl.SetFocus()
 		if msg:
 			return gui.messageBox(msg, addonName, wx.OK | wx.ICON_ERROR)
 		abreviation = getTextInBraille(abreviation)
-		table = '*'
+		table = "*"
 		idx = self.table.GetSelection()
 		if idx > 0:
-			table = [table.fileName for table in brailleTables.listTables() if table.input][idx-1]
+			table = [table.fileName for table in brailleTables.listTables() if table.input][idx - 1]
 		newEntry = AdvancedInputDictEntry(abreviation, replacement, table)
 		self.dictEntry = newEntry
 		evt.Skip()
 
 
 class SettingsDlg(gui.settingsDialogs.SettingsPanel):
-
 	# Translators: title of a dialog.
 	title = _("Advanced input mode")
 
@@ -437,20 +425,24 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		sHelper = gui.guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
 
 		# Translators: label of a dialog.
-		self.stopAdvancedInputModeAfterOneChar = sHelper.addItem(wx.CheckBox(
-			self, label=_("E&xit the advanced input mode after typing one pattern")))
+		self.stopAdvancedInputModeAfterOneChar = sHelper.addItem(
+			wx.CheckBox(self, label=_("E&xit the advanced input mode after typing one pattern"))
+		)
 		self.stopAdvancedInputModeAfterOneChar.SetValue(
-			config.conf["brailleExtender"]["advancedInputMode"]["stopAfterOneChar"])
+			config.conf["brailleExtender"]["advancedInputMode"]["stopAfterOneChar"]
+		)
 		self.escapeSignUnicodeValue = sHelper.addLabeledControl(
 			_("&Escape character for Unicode values input"),
 			wx.TextCtrl,
-			value=config.conf["brailleExtender"]["advancedInputMode"]
-			["escapeSignUnicodeValue"],)
-		
+			value=config.conf["brailleExtender"]["advancedInputMode"]["escapeSignUnicodeValue"],
+		)
 
 	def onSave(self):
-		config.conf["brailleExtender"]["advancedInputMode"]["stopAfterOneChar"] = self.stopAdvancedInputModeAfterOneChar.IsChecked()
+		config.conf["brailleExtender"]["advancedInputMode"]["stopAfterOneChar"] = (
+			self.stopAdvancedInputModeAfterOneChar.IsChecked()
+		)
 		s = self.escapeSignUnicodeValue.Value
 		if s:
-			config.conf["brailleExtender"]["advancedInputMode"][
-				"escapeSignUnicodeValue"] = getTextInBraille(s[0])
+			config.conf["brailleExtender"]["advancedInputMode"]["escapeSignUnicodeValue"] = getTextInBraille(
+				s[0]
+			)

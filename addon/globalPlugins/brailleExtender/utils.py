@@ -97,8 +97,7 @@ def make_progress_bar_from_str(percentage, text, method, positive="⢼", negativ
 	if inner_width > 0:
 		filled_last_index = int(float(percentage) / 100.0 * float(inner_width)) - 1
 		progress_bar = "⣦%s⣴" % "".join(
-			positive if slot_index <= filled_last_index else negative
-			for slot_index in range(inner_width)
+			positive if slot_index <= filled_last_index else negative for slot_index in range(inner_width)
 		)
 	if method == INSERT_AFTER:
 		return braille_text + progress_bar
@@ -230,6 +229,7 @@ def getTextInBraille(text=None, table=None):
 		if line
 	)
 
+
 def format_braille_dot_legend(cell_dot_description: str, vacant_slot: str = "⠤") -> str:
 	"""Eight-character summary of dots 1–8 for a single braille cell.
 
@@ -239,8 +239,7 @@ def format_braille_dot_legend(cell_dot_description: str, vacant_slot: str = "⠤
 	"""
 	raised_dots = frozenset(c for c in cell_dot_description if "1" <= c <= "8")
 	return "".join(
-		str(dot_number) if str(dot_number) in raised_dots else vacant_slot
-		for dot_number in range(1, 9)
+		str(dot_number) if str(dot_number) in raised_dots else vacant_slot for dot_number in range(1, 9)
 	)
 
 
@@ -280,9 +279,14 @@ def getTableOverview(table_file: str = "") -> str:
 	overview_text = header + body
 	unused_count = len(unused_combo_chars)
 	if unused_count > 1:
-		overview_text += "\n" + _("Available combinations") + " (%d): %s" % (
-			unused_count,
-			"".join(unused_combo_chars),
+		overview_text += (
+			"\n"
+			+ _("Available combinations")
+			+ " (%d): %s"
+			% (
+				unused_count,
+				"".join(unused_combo_chars),
+			)
 		)
 	elif unused_count == 1:
 		overview_text += "\n" + _("One combination available") + ": %s" % unused_combo_chars[0]
@@ -468,6 +472,7 @@ def getActiveInputTableForSwitch():
 
 def getCurrentBrailleTables(for_input: bool = False, brf: bool = False):
 	from . import tabledictionaries
+
 	if brf:
 		tables = [
 			os.path.join(baseDir, "res", "brf.ctb").encode("UTF-8"),
@@ -495,7 +500,7 @@ def get_output_reason(reason_name):
 		return getattr(controlTypes.OutputReason, reason_name)
 	if hasattr(controlTypes, legacy_attr):
 		return getattr(controlTypes, legacy_attr)
-	raise AttributeError("Reason \"%s\" unknown" % reason_name)
+	raise AttributeError('Reason "%s" unknown' % reason_name)
 
 
 def is_braille_unicode_normalization_enabled() -> bool:

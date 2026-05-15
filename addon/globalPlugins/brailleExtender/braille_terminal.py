@@ -103,9 +103,7 @@ def _sync_review_position_to_object_caret(obj: Any) -> None:
 
 def _restore_tether_after_terminal(handler: Any) -> None:
 	configured = config.conf["braille"]["tetherTo"]
-	handler._tether = (
-		handler.TETHER_FOCUS if configured == handler.TETHER_AUTO else configured
-	)
+	handler._tether = handler.TETHER_FOCUS if configured == handler.TETHER_AUTO else configured
 	handler.mainBuffer.clear()
 
 
@@ -114,11 +112,7 @@ def make_patched_set_tether(_originals: dict[str, Any]) -> Callable[..., None]:
 
 	def setTether_brailleExtender(self, tether: Any, auto: bool = False) -> None:
 		orig = _originals["BrailleHandler.setTether"]
-		if (
-			not auto
-			and tether == self.TETHER_FOCUS
-			and getattr(self, "_be_terminal_review_override", False)
-		):
+		if not auto and tether == self.TETHER_FOCUS and getattr(self, "_be_terminal_review_override", False):
 			self._be_terminal_review_override = False
 		return orig(self, tether, auto=auto)
 
