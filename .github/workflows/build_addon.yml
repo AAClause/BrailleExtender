@@ -1,64 +1,80 @@
 name: build addon
 
-on:
+"on":
   push:
     tags: ["*"]
     # To build on main/master branch, uncomment the following line:
-    # branches: [ main , master ]
+    # branches: [main, master]
 
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
 
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
 
-    - run: echo -e "pre-commit\nscons\nmarkdown">requirements.txt
+      - run: echo -e "pre-commit\nscons\nmarkdown">requirements.txt
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: 3.9
-        cache: 'pip'
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: 3.11
+          cache: "pip"
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip wheel
-        pip install -r requirements.txt
-        sudo apt-get update  -y
-        sudo apt-get install -y gettext
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip wheel
+          pip install -r requirements.txt
+          sudo apt-get update -y
+          sudo apt-get install -y gettext
 
-    - name: Code checks
-      run: export SKIP=no-commit-to-branch; pre-commit run --all
+      - name: Code checks
+        run: export SKIP=no-commit-to-branch; pre-commit run --all
 
-    - name: building addon
-      run: scons
+      - name: building addon
+        run: scons && scons pot
 
-    - uses: actions/upload-artifact@v4
-      with:
-        name: packaged_addon
-        path: ./*.nvda-addon
+      - uses: actions/upload-artifact@v7
+        with:
+          name: packaged_addon
+          path: |
+            ./*.nvda-addon
+            ./*.pot
 
   upload_release:
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
     needs: ["build"]
+    permissions:
+      contents: write
     steps:
-    - uses: actions/checkout@v3
-    - name: download releases files
-      uses: actions/download-artifact@v4.1.7
-    - name: Display structure of downloaded files
-      run: ls -R
+      - uses: actions/checkout@v6
+      - name: download releases files
+        uses: actions/download-artifact@v8
+        with:
+          name: packaged_addon
+          path: packaged_addon
+      - name: Display structure of downloaded files
+        run: ls -R
+      - name: Calculate sha256
+        run: |
+          echo -e "\nSHA256: " >> changelog.md
+          sha256sum packaged_addon/*.nvda-addon >> changelog.md
 
-    - name: Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: packaged_addon/*.nvda-addon
-        fail_on_unmatched_files: true
-        prerelease: ${{ contains(github.ref, '-') }}
+      - name: Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            packaged_addon/*.nvda-addon
+            packaged_addon/*.pot
+          body_path: changelog.md
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref, '-') }}
