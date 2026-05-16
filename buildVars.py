@@ -33,87 +33,50 @@ addon_info: AddonInfo = {
 	"addon_description": "".join(
 		[
 			_(
-				"BrailleExtender is a NVDA add-on that provides various features at braille level. Currently, the following features are implemented"
+				"Braille Extender is an NVDA add-on that extends braille output, braille input, scrolling, and display-specific gestures. It requires NVDA 2024.1 or later. For full documentation, open the User guide from the NVDA menu under Braille Extender."
 			),
-			":",
-			"\n* ",
-			_("reload two favorite braille display with shortcuts"),
-			".",
-			"\n* ",
-			_("automatic review cursor tethering in terminal role like in PuTTY, Powershell, bash, cmd"),
-			".",
-			"\n* ",
-			_("auto scroll"),
-			".",
-			"\n* ",
-			_("switch between several input/output braille tables"),
-			".",
-			"\n* ",
-			_("mark the text with special attributes through dot 7, dot 8 or both"),
-			".",
-			"\n* ",
-			_("use two output braille tables simultaneously"),
-			".",
-			"\n* ",
-			_("display tab signs as spaces"),
-			".",
-			"\n* ",
-			_("reverse forward scroll and back scroll buttons"),
-			".",
-			"\n* ",
-			_("say the current line during text scrolling either in review mode, or in focus mode or both"),
-			".",
-			"\n* ",
-			_("translate text easily in Unicode braille and vice versa. E.g.: z <--> ⠵"),
-			".",
-			"\n* ",
-			_("convert cell description to Unicode braille and vice versa. E.g.: 123 <--> ⠇"),
-			".",
-			"\n* ",
-			_("lock braille keyboard"),
-			".",
-			"\n* ",
-			_("launch an application/URL with gesture"),
-			".",
-			"\n* ",
-			_("braille dictionaries"),
-			".",
-			"\n* ",
-			_("type with one-hand from braille keyboard"),
-			".",
-			"\n* ",
-			_(
-				"display undefined characters from braille tables (including emojis) using altenative representations"
-			),
-			".",
-			"\n* ",
-			_("enter any character from braille keyboard (including emojis)"),
-			".",
-			"\n* ",
-			_("skip blank lines during text scrolling"),
-			".",
-			"\n* ",
-			_("Speech History Mode"),
-			".",
-			"\n* ",
-			_("and much more!"),
 			"\n\n",
-			_("For some braille displays, it extends the braille display commands to provide"),
-			":",
+			_("Main features include:"),
 			"\n* ",
-			_("offer complete gesture maps including function keys, multimedia keys, quick navigation, etc."),
-			";",
-			"\n* ",
-			_("emulate modifier keys, and thus any keyboard shortcut"),
-			";",
+			_("Reload two favorite braille displays with shortcuts"),
 			"\n* ",
 			_(
-				"offer several keyboard configurations concerning the possibility to input dots 7 and 8, enter and backspace"
+				"Terminals: braille can follow the review cursor while you edit (PuTTY, PowerShell, cmd, bash, and similar)"
 			),
-			";",
 			"\n* ",
-			_("add actions and quick navigation through a rotor"),
-			".",
+			_("Auto scroll with timing and blank-line options"),
+			"\n* ",
+			_(
+				"Multiple input and output braille tables, with automatic table selection on NVDA 2025.1 and later"
+			),
+			"\n* ",
+			_("Dots 7 and 8, tags, and spacing or line padding for structure and attributes"),
+			"\n* ",
+			_("Optional second Liblouis pass after the main output table"),
+			"\n* ",
+			_("Display tab characters as spaces; swap forward and back scroll buttons"),
+			"\n* ",
+			_("Speak the current line while scrolling (coordinate with NVDA braille speech settings)"),
+			"\n* ",
+			_(
+				"Convert text to Unicode braille and back, and between Unicode braille and dot-number descriptions"
+			),
+			"\n* ",
+			_("Lock the braille keyboard; lock modifier keys from the braille display"),
+			"\n* ",
+			_("Quick launches to applications or web addresses; table dictionaries"),
+			"\n* ",
+			_(
+				"One-handed braille input; rules for undefined characters including emoji; advanced input mode and abbreviations"
+			),
+			"\n* ",
+			_(
+				"Speech History Mode; configurable rotor; object and document presentation options for braille; role labels; routing in edit fields; margins; updates; and other settings"
+			),
+			"\n\n",
+			_(
+				"Where a display profile exists, the add-on can add extended gesture maps (function keys, multimedia keys, rotor actions, emulated modifiers, and more). Assign commands in NVDA Input gestures for Braille Extender, or open Gestures for this display from the Braille Extender submenu."
+			),
 		]
 	),
 	# version
@@ -121,7 +84,7 @@ addon_info: AddonInfo = {
 	# Brief changelog for this version
 	# Translators: what's new content for the add-on version to be shown in the add-on store
 	"addon_changelog": _(
-		"See readme.html bundled with the add-on and the project repository for detailed release notes."
+		"See the User guide bundled with the add-on and the project repository for detailed release notes."
 	),
 	# Author(s)
 	"addon_author": "André-Abush Clause <dev@andreabc.net> " + _("and other contributors"),
