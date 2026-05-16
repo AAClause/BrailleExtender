@@ -256,8 +256,20 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	def createMenu(self):
 		self.submenu = wx.Menu()
-		item = self.submenu.Append(wx.ID_ANY, _("Docu&mentation"), _("Opens the addon's documentation."))
+		item = self.submenu.Append(
+			wx.ID_ANY,
+			_("&User guide"),
+			_("Opens the add-on user guide (readme.html) in your default viewer."),
+		)
 		gui.mainFrame.sysTrayIcon.Bind(wx.EVT_MENU, lambda event: self.script_getHelp(None), item)
+		item = self.submenu.Append(
+			wx.ID_ANY,
+			_("&Gestures for this display…"),
+			_("Shows a browseable summary of braille profile bindings and add-on keyboard shortcuts."),
+		)
+		gui.mainFrame.sysTrayIcon.Bind(
+			wx.EVT_MENU, lambda event: self.script_showGestureReference(None), item
+		)
 		item = self.submenu.Append(wx.ID_ANY, _("&Settings..."), _("Opens the addons' settings."))
 		gui.mainFrame.sysTrayIcon.Bind(
 			wx.EVT_MENU, lambda event: wx.CallAfter(_popupSettingsDialog, settings.AddonSettingsDialog), item
@@ -882,11 +894,19 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			if braille.handler.buffer is braille.handler.messageBuffer:
 				braille.handler._dismissMessage()
 
-	@script(description=_("Show the Braille Extender documentation"))
+	@script(description=_("Open the Braille Extender user guide (readme.html)"))
 	def script_getHelp(self, g):
-		from . import addondoc
+		from . import addonhelp
 
-		addondoc.AddonDoc(self)
+		addonhelp.open_user_guide()
+
+	@script(
+		description=_("Show a browseable summary of braille profile gestures and add-on keyboard shortcuts")
+	)
+	def script_showGestureReference(self, g):
+		from . import addonhelp
+
+		addonhelp.show_gesture_reference(self)
 
 	def noKeyboarLayout(self):
 		return self.noKC

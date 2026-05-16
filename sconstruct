@@ -110,9 +110,9 @@ if (cssFile := Path("style.css")).is_file():
 	cssTarget = env.Command(str(cssPath), str(cssFile), Copy("$TARGET", "$SOURCE"))
 	env.Depends(addon, cssTarget)
 
-if (readmeFile := Path("readme.md")).is_file():
-	readmePath = docsDir / buildVars.baseLanguage / readmeFile
-	readmeTarget = env.Command(str(readmePath), str(readmeFile), Copy("$TARGET", "$SOURCE"))
+if (readme_src := next((p for p in (Path("readme.md"), Path("README.md")) if p.is_file()), None)):
+	readmePath = docsDir / buildVars.baseLanguage / "readme.md"
+	readmeTarget = env.Command(str(readmePath), str(readme_src), Copy("$TARGET", "$SOURCE"))
 	env.Depends(addon, readmeTarget)
 
 for mdFile in env.Glob(docsDir / "*/*.md"):
