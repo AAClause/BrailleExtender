@@ -11,10 +11,9 @@ from collections import namedtuple
 import addonHandler
 import gui
 import wx
+from logHandler import log
 
 addonHandler.initTranslation()
-
-import braille
 
 popupSettingsDialog = getattr(gui.mainFrame, "popupSettingsDialog", gui.mainFrame._popupSettingsDialog)
 import louis
@@ -50,42 +49,44 @@ DIRECTION_LABELS = {
 }
 DIRECTION_LABELS_ORDERING = (DIRECTION_BOTH, DIRECTION_FORWARD, DIRECTION_BACKWARD)
 
-dictTables = []
-invalidDictTables = set()
+dictTables: list[str] = []
+invalidDictTables: set[str] = set()
+
+DICT_TYPE_DEFAULT = "default"
+DICT_TYPE_TABLE = "table"
+DICT_TYPE_TMP = "tmp"
+DICT_TYPES = (DICT_TYPE_TMP, DICT_TYPE_TABLE, DICT_TYPE_DEFAULT)
 
 
-def checkTable(path):
-	global invalidDictTables
+def check_dictionary_table(path: str) -> bool:
 	try:
 		louis.checkTable([path])
 		return True
 	except RuntimeError:
 		invalidDictTables.add(path)
-	return False
+		return False
 
 
-def getValidPathsDict():
-	types = ["tmp", "table", "default"]
-	paths = [getPathDict(type_) for type_ in types]
-
-	def path_is_valid_dict(path):
-		return os.path.exists(path) and os.path.isfile(path) and checkTable(path)
-
-	return [path for path in paths if path_is_valid_dict(path)]
+def _valid_dictionary_paths() -> list[str]:
+	return [
+		path
+		for path in (get_dictionary_path(type_) for type_ in DICT_TYPES)
+		if os.path.isfile(path) and check_dictionary_table(path)
+	]
 
 
-def getPathDict(type_):
-	if type_ == "table":
+def get_dictionary_path(type_: str) -> str:
+	if type_ == DICT_TYPE_TABLE:
 		path = os.path.join(configDir, "brailleDicts", getTranslationTable())
-	elif type_ == "tmp":
+	elif type_ == DICT_TYPE_TMP:
 		path = os.path.join(configDir, "brailleDicts", "tmp")
 	else:
 		path = os.path.join(configDir, "brailleDicts", "default")
-	return "%s.cti" % path
+	return f"{path}.cti"
 
 
-def getDictionary(type_):
-	path = getPathDict(type_)
+def get_dictionary(type_: str):
+	path = get_dictionary_path(type_)
 	if not os.path.exists(path):
 		return False, []
 	out = []
@@ -114,51 +115,69 @@ def getDictionary(type_):
 	return True, out
 
 
-def saveDict(type_, dict_):
-	path = getPathDict(type_)
-	f = open(path, "wb")
-	for entry in dict_:
-		direction = entry.direction if entry.direction != "both" else ""
-		line = (
-			"%s	%s	%s	%s	%s"
-			% (direction, entry.opcode, entry.textPattern, entry.braillePattern, entry.comment)
-		).strip() + "\n"
-		f.write(line.encode("UTF-8"))
-	f.write(b"\n")
-	f.close()
-	return True
+def save_dictionary(type_: str, entries: list) -> bool:
+	path = get_dictionary_path(type_)
+	try:
+		with open(path, "wb") as dict_file:
+			for entry in entries:
+				direction = entry.direction if entry.direction != "both" else ""
+				line = (
+					f"{direction}\t{entry.opcode}\t{entry.textPattern}\t{entry.braillePattern}\t{entry.comment}"
+				).strip() + "\n"
+				dict_file.write(line.encode("UTF-8"))
+			dict_file.write(b"\n")
+		return True
+	except OSError:
+		log.error("Braille Extender: could not write dictionary %s", path, exc_info=True)
+		return False
 
 
-def setDictTables():
+def refresh_dictionary_paths() -> None:
 	global dictTables
-	dictTables = getValidPathsDict()
+	dictTables = _valid_dictionary_paths()
 	invalidDictTables.clear()
 
 
-def notifyInvalidTables():
-	if invalidDictTables:
-		dicts = {getPathDict("default"): "default", getPathDict("table"): "table", getPathDict("tmp"): "tmp"}
-		msg = _(
+def notify_invalid_dictionary_tables() -> None:
+	if not invalidDictTables:
+		return
+	label_by_path = {get_dictionary_path(t): t for t in DICT_TYPES}
+	names = ", ".join(label_by_path[path] for path in invalidDictTables if path in label_by_path)
+	if not names:
+		return
+	msg = (
+		_(
 			"One or more errors are present in dictionary tables: %s. As a result, these dictionaries were not loaded."
-		) % ", ".join([dicts[path] for path in invalidDictTables if path in dicts])
-		wx.CallAfter(gui.messageBox, msg, _("Braille Extender"), wx.OK | wx.ICON_ERROR)
+		)
+		% names
+	)
+	wx.CallAfter(gui.messageBox, msg, _("Braille Extender"), wx.OK | wx.ICON_ERROR)
 
 
-def removeTmpDict():
-	path = getPathDict("tmp")
+def remove_temporary_dictionary() -> None:
+	path = get_dictionary_path(DICT_TYPE_TMP)
 	if os.path.exists(path):
 		os.remove(path)
 
 
-setDictTables()
-notifyInvalidTables()
+def apply_dictionary_changes(type_: str, entries: list) -> bool:
+	"""Save dictionary entries, refresh the Liblouis chain, and update braille."""
+	from . import braille_table_chain
+	from .utils import refresh_braille_for_current_focus
+
+	if not save_dictionary(type_, entries):
+		return False
+	braille_table_chain.refresh()
+	refresh_braille_for_current_focus()
+	notify_invalid_dictionary_tables()
+	return True
 
 
 class DictionaryDlg(gui.settingsDialogs.SettingsDialog):
 	def __init__(self, parent, title, type_):
 		self.title = title
 		self.type_ = type_
-		self.tmpDict = getDictionary(type_)[1]
+		self.tmpDict = get_dictionary(type_)[1]
 		super().__init__(parent, hasApplyButton=True)
 
 	def makeSettings(self, settingsSizer):
@@ -230,7 +249,7 @@ class DictionaryDlg(gui.settingsDialogs.SettingsDialog):
 		self.dictList.SetFocus()
 
 	def onOpenFileClick(self, evt):
-		dictPath = getPathDict(self.type_)
+		dictPath = get_dictionary_path(self.type_)
 		if not os.path.exists(dictPath):
 			return
 		try:
@@ -239,7 +258,7 @@ class DictionaryDlg(gui.settingsDialogs.SettingsDialog):
 			os.popen('notepad "%s"' % dictPath)
 
 	def onReloadDictClick(self, evt):
-		self.tmpDict = getDictionary(self.type_)[1]
+		self.tmpDict = get_dictionary(self.type_)[1]
 		self.onSetEntries()
 
 	@staticmethod
@@ -334,27 +353,19 @@ class DictionaryDlg(gui.settingsDialogs.SettingsDialog):
 			index = self.dictList.GetNextSelected(index)
 		self.dictList.SetFocus()
 
-	def onApply(self, evt):
-		res = saveDict(self.type_, self.tmpDict)
-		setDictTables()
-		braille.handler.setDisplayByName(braille.handler.display.name)
-		if res:
-			super().onApply(evt)
-		else:
-			RuntimeError("Error during writing file, more info in log.")
-		notifyInvalidTables()
+	def _commit(self, evt, close_dialog: bool) -> None:
+		if apply_dictionary_changes(self.type_, self.tmpDict):
+			if close_dialog:
+				super().onOk(evt)
+			else:
+				super().onApply(evt)
 		self.dictList.SetFocus()
 
+	def onApply(self, evt):
+		self._commit(evt, close_dialog=False)
+
 	def onOk(self, evt):
-		res = saveDict(self.type_, self.tmpDict)
-		setDictTables()
-		braille.handler.setDisplayByName(braille.handler.display.name)
-		notifyInvalidTables()
-		if res:
-			super().onOk(evt)
-		else:
-			RuntimeError("Error during writing file, more info in log.")
-		notifyInvalidTables()
+		self._commit(evt, close_dialog=True)
 
 
 class DictionaryEntryDlg(wx.Dialog):
@@ -484,16 +495,13 @@ class DictionaryEntryDlg(wx.Dialog):
 		newEntry = TableDictEntry(
 			opcode, textPattern, braillePattern, self.getDirection(), self.commentTextCtrl.GetValue()
 		)
-		save = True if hasattr(self, "dictRadioBox") else False
+		save = hasattr(self, "dictRadioBox")
 		if save:
 			type_ = self.getType_()
-			dict_ = getDictionary(type_)[1]
+			dict_ = get_dictionary(type_)[1]
 			dict_.append(newEntry)
-			saveDict(type_, dict_)
+			apply_dictionary_changes(type_, dict_)
 			self.Destroy()
-			setDictTables()
-			braille.handler.setDisplayByName(braille.handler.display.name)
-			notifyInvalidTables()
 		else:
 			self.dictEntry = newEntry
 		evt.Skip()

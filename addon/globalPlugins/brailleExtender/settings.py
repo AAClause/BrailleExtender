@@ -216,14 +216,14 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 		self.reverseScrollBtns.SetValue(config.conf["brailleExtender"]["reverseScrollBtns"])
 
 		self.brailleDisplay1 = sHelper.addLabeledControl(
-			_("Preferred &primary braille display:"), wx.Choice, choices=self.bds_v
+			_("&Primary favorite display (reload with NVDA+J):"), wx.Choice, choices=self.bds_v
 		)
 		driver_name = "last"
 		if config.conf["brailleExtender"]["brailleDisplay1"] in self.bds_k:
 			driver_name = config.conf["brailleExtender"]["brailleDisplay1"]
 		self.brailleDisplay1.SetSelection(self.bds_k.index(driver_name))
 		self.brailleDisplay2 = sHelper.addLabeledControl(
-			_("Preferred &secondary braille display:"), wx.Choice, choices=self.bds_v
+			_("&Second favorite display (reload with NVDA+Shift+J):"), wx.Choice, choices=self.bds_v
 		)
 		driver_name = "last"
 		if config.conf["brailleExtender"]["brailleDisplay2"] in self.bds_k:
@@ -337,12 +337,25 @@ class BrailleTablesDlg(gui.settingsDialogs.SettingsPanel):
 		)
 		self.inputTableShortcuts.SetSelection(iSht)
 
-		postOutputFNs = [t[0] for t in addoncfg.tables if t.output]
+		from . import braille_table_chain
+
+		postOutputFNs = braille_table_chain.list_output_table_file_names()
 		lt = [_("None")] + [t[1] for t in addoncfg.tables if t.output]
 		postTableVal = config.conf["brailleExtender"]["postTable"]
 		postIdx = postOutputFNs.index(postTableVal) + 1 if postTableVal in postOutputFNs else 0
-		self.postTable = sHelper.addLabeledControl(_("&Secondary output table:"), wx.Choice, choices=lt)
+		self.postTable = sHelper.addLabeledControl(
+			_("&Additional Liblouis output pass:"), wx.Choice, choices=lt
+		)
 		self.postTable.SetSelection(postIdx)
+		sHelper.addItem(
+			wx.StaticText(
+				self,
+				label=_(
+					"After the main output table, the selected table is applied again to the braille. "
+					"Use None to show only the main table result."
+				),
+			)
+		)
 
 		self.tabSpace = sHelper.addItem(wx.CheckBox(self, label=_("Display &tabs as spaces")))
 		self.tabSpace.SetValue(config.conf["brailleExtender"]["tabSpace"])
@@ -359,6 +372,8 @@ class BrailleTablesDlg(gui.settingsDialogs.SettingsPanel):
 		self.outputTablesList.SetFocus()
 
 	def onSave(self):
+		from . import braille_table_chain
+
 		outputData = self._getOutputTablesData()
 		inputData = self._getInputTablesData()
 		self.oTables = {
@@ -379,13 +394,12 @@ class BrailleTablesDlg(gui.settingsDialogs.SettingsPanel):
 			if self.inputTableShortcuts.GetSelection() > 0
 			else "?"
 		)
-		addoncfg.loadPreferedTables()
-
-		postOutputFNs = [t[0] for t in addoncfg.tables if t.output]
+		postOutputFNs = braille_table_chain.list_output_table_file_names()
 		postTableID = self.postTable.GetSelection()
 		config.conf["brailleExtender"]["postTable"] = (
-			"None" if postTableID == 0 else postOutputFNs[postTableID - 1]
+			braille_table_chain.POST_TABLE_NONE if postTableID == 0 else postOutputFNs[postTableID - 1]
 		)
+		instanceGP.reloadBrailleTables()
 		if (
 			self.tabSpace.IsChecked()
 			and config.conf["brailleExtender"]["tabSpace"] != self.tabSpace.IsChecked()

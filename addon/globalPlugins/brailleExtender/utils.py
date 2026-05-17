@@ -10,7 +10,6 @@ import re
 
 import addonHandler
 import api
-import appModuleHandler
 import braille
 import brailleInput
 import brailleTables
@@ -32,7 +31,6 @@ from .common import (
 	INSERT_AFTER,
 	INSERT_BEFORE,
 	REPLACE_TEXT,
-	baseDir,
 	default_braille_table_file_for_cur_language,
 	NVDA_HAS_AUTOMATIC_BRAILLE_TABLES,
 )
@@ -440,10 +438,9 @@ def getAutomaticTableDisplayName(*, is_input: bool) -> str:
 
 
 def getTranslationTable():
-	translation_table = config.conf["braille"]["translationTable"]
-	if translation_table == "auto":
-		return default_braille_table_file_for_cur_language(is_input=False)
-	return translation_table
+	from . import braille_table_chain
+
+	return braille_table_chain.get_translation_table_file()
 
 
 def getActiveOutputTableForSwitch():
@@ -471,27 +468,9 @@ def getActiveInputTableForSwitch():
 
 
 def getCurrentBrailleTables(for_input: bool = False, brf: bool = False):
-	from . import tabledictionaries
+	from . import braille_table_chain
 
-	if brf:
-		tables = [
-			os.path.join(baseDir, "res", "brf.ctb").encode("UTF-8"),
-			os.path.join(brailleTables.TABLES_DIR, "braille-patterns.cti"),
-		]
-	else:
-		tables = []
-		try:
-			app = appModuleHandler.getAppModuleForNVDAObject(api.getNavigatorObject())
-		except OSError:
-			app = None
-		if app and app.appName != "nvda":
-			tables += tabledictionaries.dictTables
-		if for_input:
-			table_file = brailleInput.handler._table.fileName
-		else:
-			table_file = getTranslationTable()
-		tables += _liblouisTablePaths(table_file)
-	return tables
+	return braille_table_chain.get_liblouis_table_chain(for_input=for_input, brf=brf)
 
 
 def get_output_reason(reason_name):

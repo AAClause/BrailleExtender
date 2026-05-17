@@ -334,14 +334,17 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		)
 
 	def reloadBrailleTables(self):
+		from . import braille_table_chain
+
 		patches.louis.liblouis.lou_free()
+		braille_table_chain.refresh()
 		self.backup__brailleTableDict = config.conf["braille"]["translationTable"]
-		tabledictionaries.setDictTables()
-		tabledictionaries.notifyInvalidTables()
+		tabledictionaries.notify_invalid_dictionary_tables()
 		if config.conf["brailleExtender"]["tabSpace"]:
 			liblouisDef = r"always \t " + ("0-" * addoncfg.getTabSize()).strip("-")
-			patches.louis.compileString(patches.getCurrentBrailleTables(), bytes(liblouisDef, "ASCII"))
+			patches.louis.compileString(utils.getCurrentBrailleTables(), bytes(liblouisDef, "ASCII"))
 		undefinedchars.setUndefinedChar()
+		utils.refresh_braille_for_current_focus()
 
 	@staticmethod
 	def onDefaultDictionary(evt):
@@ -757,7 +760,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	)
 	def script_translateInBRU(self, gesture):
 		tm = time.time()
-		t = utils.getTextInBraille("", patches.getCurrentBrailleTables())
+		t = utils.getTextInBraille("", utils.getCurrentBrailleTables())
 		if not t.strip():
 			return ui.message(_("No text selection"))
 		ui.browseableMessage(
@@ -772,7 +775,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	)
 	def script_charsToCellDescriptions(self, gesture):
 		tm = time.time()
-		t = utils.getTextInBraille("", patches.getCurrentBrailleTables())
+		t = utils.getTextInBraille("", utils.getCurrentBrailleTables())
 		t = huc.unicodeBrailleToDescription(t)
 		if not t.strip():
 			return ui.message(_("No text selection"))
@@ -1021,7 +1024,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	def _cyclePreferredInputTable(self, delta: int):
 		if addoncfg.noUnicodeTable:
 			return ui.message(_("NVDA 2017.3 or later is required to use this feature"))
-		addoncfg.loadPreferedTables()
+		addoncfg.loadPreferredTables()
 		if len(addoncfg.inputTables) < 2:
 			return ui.message(
 				_("You must choose at least two tables for this feature. Please fill in the settings")
@@ -1064,7 +1067,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	def _cyclePreferredOutputTable(self, delta: int):
 		if addoncfg.noUnicodeTable:
 			return ui.message(_("NVDA 2017.3 or later is required to use this feature"))
-		addoncfg.loadPreferedTables()
+		addoncfg.loadPreferredTables()
 		if len(addoncfg.outputTables) < 2:
 			return ui.message(
 				_("You must choose at least two tables for this feature. Please fill in the settings")
@@ -1090,8 +1093,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				braille.handler._table = brailleTables.getTable(
 					default_braille_table_file_for_cur_language(is_input=False)
 				)
-		utils.refresh_braille_for_current_focus()
-		tabledictionaries.setDictTables()
+		self.reloadBrailleTables()
 		msg = (
 			utils.getAutomaticTableDisplayName(is_input=False)
 			if nextTable == "auto"
@@ -1194,7 +1196,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		self.reload_configured_braille_display(1)
 
 	@script(
-		description=_("Reload the secondary braille display chosen in Braille Extender settings"),
+		description=_("Reload the second favorite braille display chosen in Braille Extender settings"),
 		gesture="kb:nvda+shift+j",
 	)
 	def script_reload_brailledisplay2(self, gesture):
@@ -1667,7 +1669,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				pass
 		if self.autoTestPlayed:
 			self.autoTestTimer.Stop()
-		tabledictionaries.removeTmpDict()
+		tabledictionaries.remove_temporary_dictionary()
 		advancedinput.terminate()
 		patches.unload_patches()
 		super().terminate()

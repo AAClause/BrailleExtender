@@ -75,6 +75,11 @@ from .documentformatting import (
 )
 from .objectpresentation import getPropertiesBraille, selectedElementEnabled, update_NVDAObjectRegion
 from .onehand import process as processOneHandMode
+from .braille_table_chain import (
+	disable_additional_output_for_session,
+	get_liblouis_table_chain,
+	has_additional_output,
+)
 from .utils import (
 	getCharFromValue,
 	getCurrentBrailleTables,
@@ -307,13 +312,35 @@ def update_region(self) -> None:
 				if translate_cursor is not None:
 					translate_cursor = converter.strToEncodedOffsets(translate_cursor)
 
-	self.brailleCells, braille_to_raw_pos, raw_to_braille_pos, self.brailleCursorPos = louisHelper.translate(
-		getCurrentBrailleTables(brf=bool(instanceGP and instanceGP.BRFMode)),
-		text_to_translate,
-		typeform=text_typeforms,
-		mode=mode,
-		cursorPos=translate_cursor,
-	)
+	brf_mode = bool(instanceGP and instanceGP.BRFMode)
+	table_list = get_liblouis_table_chain(brf=brf_mode)
+	try:
+		self.brailleCells, braille_to_raw_pos, raw_to_braille_pos, self.brailleCursorPos = (
+			louisHelper.translate(
+				table_list,
+				text_to_translate,
+				typeform=text_typeforms,
+				mode=mode,
+				cursorPos=translate_cursor,
+			)
+		)
+	except Exception:
+		if not has_additional_output():
+			raise
+		log.warning(
+			"Braille Extender: translation failed with additional output pass; disabling it for this session",
+			exc_info=True,
+		)
+		disable_additional_output_for_session()
+		self.brailleCells, braille_to_raw_pos, raw_to_braille_pos, self.brailleCursorPos = (
+			louisHelper.translate(
+				get_liblouis_table_chain(brf=brf_mode),
+				text_to_translate,
+				typeform=text_typeforms,
+				mode=mode,
+				cursorPos=translate_cursor,
+			)
+		)
 	if converter is not None:
 		braille_to_raw_pos = [converter.encodedToStrOffsets(i) for i in braille_to_raw_pos]
 		raw_to_braille_pos = [raw_to_braille_pos[i] for i in converter.computedStrToEncodedOffsets]

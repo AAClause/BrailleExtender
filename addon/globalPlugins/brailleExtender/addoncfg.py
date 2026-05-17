@@ -90,8 +90,6 @@ profileFileExists = gesturesFileExists = False
 
 noMessageTimeout = True if "noMessageTimeout" in config.conf["braille"] else False
 outputTables = inputTables = None
-preTable = []
-postTable = []
 if not os.path.exists(profilesDir):
 	log.error("Profiles' path not found")
 else:
@@ -315,7 +313,7 @@ def getConfspec():
 	}
 
 
-def loadPreferedTables():
+def loadPreferredTables():
 	from . import utils
 
 	global inputTables, outputTables
@@ -390,7 +388,9 @@ def loadConf():
 	if backupDisplaySize - limitCellsRight <= backupDisplaySize and limitCellsRight > 0:
 		braille.handler.displaySize = backupDisplaySize - limitCellsRight
 	if not noUnicodeTable:
-		loadPreferedTables()
+		from . import braille_table_chain
+
+		braille_table_chain.refresh()
 	if config.conf["brailleExtender"]["inputTableShortcuts"] not in tablesUFN:
 		config.conf["brailleExtender"]["inputTableShortcuts"] = "?"
 	return True
