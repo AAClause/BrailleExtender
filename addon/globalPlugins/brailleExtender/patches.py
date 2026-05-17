@@ -1174,9 +1174,16 @@ def previousLine(self, start: bool = False) -> None:
 def executeGesture(gesture):
 	script = gesture.script
 	if "brailleDisplayDrivers" in str(type(gesture)):
-		if instanceGP.brailleKeyboardLocked and (
-			(hasattr(script, "__func__") and script.__func__.__name__ != "script_toggleLockBrailleKeyboard")
-			or not hasattr(script, "__func__")
+		if (
+			instanceGP
+			and instanceGP.brailleKeyboardLocked
+			and (
+				(
+					hasattr(script, "__func__")
+					and script.__func__.__name__ != "script_toggleLockBrailleKeyboard"
+				)
+				or not hasattr(script, "__func__")
+			)
 		):
 			return
 		if hasattr(script, "__func__") and (
@@ -1210,6 +1217,8 @@ def executeGesture(gesture):
 				and script.__func__.__name__ in ["script_braille_scrollBack", "script_braille_scrollForward"]
 			)
 		):
+			gesture.speechEffectWhenExecuted = None
+		elif script is None and not config.conf["brailleExtender"]["stopSpeechUnknown"]:
 			gesture.speechEffectWhenExecuted = None
 	return True
 
