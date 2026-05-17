@@ -328,7 +328,7 @@ def update_region(self) -> None:
 		if not has_additional_output():
 			raise
 		log.warning(
-			"Braille Extender: translation failed with additional output pass; disabling it for this session",
+			"translation failed with additional output pass; disabling it for this session",
 			exc_info=True,
 		)
 		disable_additional_output_for_session()
@@ -981,6 +981,15 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 	return braille.TEXT_SEPARATOR.join([x for x in textList if x])
 
 
+def _typeform_and_brlex_mask_from_format_field(region, field, formatConfig):
+	"""Return Liblouis typeform flags and Braille Extender cell mask for a format field."""
+	result = region._getTypeformFromFormatField(field, formatConfig)
+	if isinstance(result, tuple):
+		return result
+	# NVDA core returns only the Liblouis typeform int until documentformatting is applied.
+	return result, 0
+
+
 def _addTextWithFields(
 	self, info: textInfos.TextInfo, formatConfig: dict[str, Any], isSelection: bool = False
 ) -> None:
@@ -1023,7 +1032,9 @@ def _addTextWithFields(
 			if cmd == "formatChange":
 				if isinstance(field, dict):
 					_prepare_format_field_for_braille(field)
-				typeform, brlex_typeform = self._getTypeformFromFormatField(field, formatConfig)
+				typeform, brlex_typeform = _typeform_and_brlex_mask_from_format_field(
+					self, field, formatConfig
+				)
 				text = getFormatFieldBraille(
 					field, format_field_attributes_cache, self._isFormatFieldAtStart, formatConfig
 				)

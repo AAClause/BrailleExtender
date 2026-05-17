@@ -13,7 +13,6 @@ import addonHandler
 import api
 import braille
 import brailleInput
-import brailleTables
 import config
 import globalCommands
 import globalPluginHandler
@@ -55,7 +54,6 @@ from .common import (
 	RC_NORMAL,
 	RC_EMULATE_ARROWS_BEEP,
 	RC_EMULATE_ARROWS_SILENT,
-	default_braille_table_file_for_cur_language,
 )
 
 addonHandler.initTranslation()
@@ -149,9 +147,17 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		super(globalPluginHandler.GlobalPlugin, self).__init__()
 		patches.instanceGP = self
 		patches.apply_patches()
-		self.reloadBrailleTables()
+		braille.TextInfoRegion._addTextWithFields = documentformatting.decorator(
+			braille.TextInfoRegion._addTextWithFields, "addTextWithFields"
+		)
+		braille.TextInfoRegion.update = documentformatting.decorator(braille.TextInfoRegion.update, "update")
+		braille.TextInfoRegion._getTypeformFromFormatField = documentformatting.decorator(
+			braille.TextInfoRegion._getTypeformFromFormatField, "_getTypeformFromFormatField"
+		)
 		settings.instanceGP = self
 		addoncfg.loadConf()
+		if not addoncfg.noUnicodeTable:
+			self.reloadBrailleTables(apply_handlers=True)
 		rotor.reload_from_config()
 		addoncfg.initGestures()
 		addoncfg.loadGestures()
@@ -174,13 +180,6 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			updatecheck.checkUpdates(True)
 			config.conf["brailleExtender"]["lastCheckUpdate"] = time.time()
 		self.backup__brailleTableDict = config.conf["braille"]["translationTable"]
-		braille.TextInfoRegion._addTextWithFields = documentformatting.decorator(
-			braille.TextInfoRegion._addTextWithFields, "addTextWithFields"
-		)
-		braille.TextInfoRegion.update = documentformatting.decorator(braille.TextInfoRegion.update, "update")
-		braille.TextInfoRegion._getTypeformFromFormatField = documentformatting.decorator(
-			braille.TextInfoRegion._getTypeformFromFormatField, "_getTypeformFromFormatField"
-		)
 		if config.conf["brailleExtender"]["reverseScrollBtns"]:
 			self.reverseScrollBtns()
 		self.createMenu()
@@ -300,6 +299,17 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		gui.mainFrame.sysTrayIcon.Bind(wx.EVT_MENU, self.onTemporaryDictionary, item)
 
 		item = self.submenu.Append(
+			wx.ID_ANY,
+			_("&Custom braille tables..."),
+			_("Add, remove, and edit your own Liblouis braille tables (NVDA 2024.3+)."),
+		)
+		gui.mainFrame.sysTrayIcon.Bind(
+			wx.EVT_MENU,
+			lambda event: wx.CallAfter(_popupSettingsDialog, settings.CustomBrailleTablesDlg),
+			item,
+		)
+
+		item = self.submenu.Append(
 			wx.ID_ANY, _("Advanced &input mode dictionary..."), _("Advanced input mode configuration")
 		)
 		gui.mainFrame.sysTrayIcon.Bind(
@@ -333,11 +343,10 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			2, wx.ID_ANY, "%s (%s)" % (_("&Braille Extender"), addonVersion), self.submenu
 		)
 
-	def reloadBrailleTables(self):
-		from . import braille_table_chain
+	def reloadBrailleTables(self, *, apply_handlers: bool = False):
+		from . import braille_tables
 
-		patches.louis.liblouis.lou_free()
-		braille_table_chain.refresh()
+		braille_tables.reload_liblouis_chain(apply_handlers=apply_handlers)
 		self.backup__brailleTableDict = config.conf["braille"]["translationTable"]
 		tabledictionaries.notify_invalid_dictionary_tables()
 		if config.conf["brailleExtender"]["tabSpace"]:
@@ -467,17 +476,13 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				if self.rotorGES[k] not in ["selectElt", "nextSetRotor", "priorSetRotor"]:
 					self.bindGestures({k: self.rotorGES[k]})
 
-	@script(
-		description=_(
-			"Braille Extender: select the previous rotor category (links, headings, review, and so on)"
-		)
-	)
+	@script(description=_("Select the previous rotor category (links, headings, review, and so on)"))
 	def script_priorRotor(self, gesture):
 		msg = rotor.advance_rotor(-1)
 		self.bindRotorGES()
 		return ui.message(msg)
 
-	@script(description=_("Braille Extender: select the next rotor category"))
+	@script(description=_("Select the next rotor category"))
 	def script_nextRotor(self, gesture):
 		msg = rotor.advance_rotor(1)
 		self.bindRotorGES()
@@ -527,7 +532,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	@script(
 		description=_(
-			"Braille Extender rotor: move forward (next character, link, review line, and so on, depending on the rotor)"
+			"Rotor: move forward (next character, link, review line, and so on, depending on the rotor)"
 		)
 	)
 	def script_nextEltRotor(self, gesture):
@@ -551,11 +556,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		else:
 			return self.moveTo("next", gesture)
 
-	@script(
-		description=_(
-			"Braille Extender rotor: move backward (previous character, link, review line, and so on)"
-		)
-	)
+	@script(description=_("Rotor: move backward (previous character, link, review line, and so on)"))
 	def script_priorEltRotor(self, gesture):
 		rid = rotor.current_rotor_id()
 		if rid == rotor.RotorId.default:
@@ -578,7 +579,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	@script(
 		description=_(
-			"Braille Extender rotor: next step (next line, next object group, larger selection unit, depending on the rotor)"
+			"Rotor: next step (next line, next object group, larger selection unit, depending on the rotor)"
 		)
 	)
 	def script_nextSetRotor(self, gesture):
@@ -594,11 +595,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		else:
 			return self.sendComb("downarrow", gesture)
 
-	@script(
-		description=_(
-			"Braille Extender rotor: previous step (previous line, object group, or selection unit)"
-		)
-	)
+	@script(description=_("Rotor: previous step (previous line, object group, or selection unit)"))
 	def script_priorSetRotor(self, gesture):
 		rid = rotor.current_rotor_id()
 		if rid in (rotor.RotorId.moveInText, rotor.RotorId.textSelection):
@@ -612,9 +609,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		else:
 			self.sendComb("uparrow", gesture)
 
-	@script(
-		description=_("Braille Extender rotor: activate the item (press Enter or the rotor’s default action)")
-	)
+	@script(description=_("Rotor: activate the item (press Enter or the rotor’s default action)"))
 	def script_selectElt(self, gesture):
 		if rotor.current_rotor_id() == rotor.RotorId.object:
 			self.sendComb("NVDA+enter", gesture)
@@ -1036,24 +1031,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			tid = -1
 		nID = (tid + delta) % len(addoncfg.inputTables)
 		nextTable = addoncfg.inputTables[nID]
-		if nextTable == "auto":
-			config.conf["braille"]["inputTable"] = "auto"
-			# Bypass handler's table setter to avoid it overwriting config with table.fileName
-			brailleInput.handler._table = brailleTables.getTable(
-				default_braille_table_file_for_cur_language(is_input=True)
-			)
-			msg = utils.getAutomaticTableDisplayName(is_input=True)
-		else:
-			try:
-				brailleInput.handler.table = brailleTables.getTable(nextTable)
-				config.conf["braille"]["inputTable"] = nextTable
-				msg = brailleInput.handler.table.displayName
-			except (ValueError, LookupError):
-				brailleInput.handler.table = brailleTables.getTable(
-					default_braille_table_file_for_cur_language(is_input=True)
-				)
-				msg = brailleInput.handler.table.displayName
-		ui.message(_("Input: %s") % msg)
+		utils.apply_braille_input_table(nextTable)
+		self.reloadBrailleTables()
+		ui.message(_("Input: %s") % utils.get_braille_table_display_name(nextTable, is_input=True))
 
 	@script(
 		description=_(
@@ -1079,41 +1059,17 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			tid = -1
 		nID = (tid + delta) % len(addoncfg.outputTables)
 		nextTable = addoncfg.outputTables[nID]
-		if nextTable == "auto":
-			config.conf["braille"]["translationTable"] = "auto"
-			# Bypass handler's table setter to avoid it overwriting config with table.fileName
-			braille.handler._table = brailleTables.getTable(
-				default_braille_table_file_for_cur_language(is_input=False)
-			)
-		else:
-			config.conf["braille"]["translationTable"] = nextTable
-			try:
-				braille.handler.table = brailleTables.getTable(nextTable)
-			except (ValueError, LookupError):
-				braille.handler._table = brailleTables.getTable(
-					default_braille_table_file_for_cur_language(is_input=False)
-				)
+		utils.apply_braille_output_table(nextTable)
 		self.reloadBrailleTables()
-		msg = (
-			utils.getAutomaticTableDisplayName(is_input=False)
-			if nextTable == "auto"
-			else addoncfg.tablesTR[addoncfg.tablesFN.index(utils.getTranslationTable())]
-		)
-		ui.message(_("Output: %s") % msg)
+		ui.message(_("Output: %s") % utils.get_braille_table_display_name(nextTable, is_input=False))
 
 	@script(
 		description=_("Announce the active Liblouis input and output table names in speech and braille"),
 		gesture="kb:shift+NVDA+p",
 	)
 	def script_currentBrailleTable(self, gesture):
-		if config.conf["braille"]["inputTable"] == "auto":
-			inTable = utils.getAutomaticTableDisplayName(is_input=True)
-		else:
-			inTable = brailleInput.handler.table.displayName
-		if config.conf["braille"]["translationTable"] == "auto":
-			ouTable = utils.getAutomaticTableDisplayName(is_input=False)
-		else:
-			ouTable = addoncfg.tablesTR[addoncfg.tablesFN.index(utils.getTranslationTable())]
+		inTable = utils.get_braille_table_display_name(utils.getActiveInputTableForSwitch(), is_input=True)
+		ouTable = utils.get_braille_table_display_name(utils.getActiveOutputTableForSwitch(), is_input=False)
 		if ouTable == inTable:
 			braille.handler.message(_("I⣿O:{I}").format(I=inTable, O=ouTable))
 			speech.speakMessage(_("Input and output: {I}.").format(I=inTable, O=ouTable))
@@ -1653,6 +1609,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		speech.speakMessage(msg)
 
 	def terminate(self):
+		from .custom_braille_tables import ensure_nvda_braille_config_valid
+
+		ensure_nvda_braille_config_valid()
 		self.removeMenu()
 		rolelabels.discardRoleLabels()
 		if addoncfg.noUnicodeTable:

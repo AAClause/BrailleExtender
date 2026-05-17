@@ -59,11 +59,16 @@ def nvdaVersionAtLeast(year: int, major: int, minor: int = 0) -> bool:
 # NVDA core features (from changelog), used for addon compatibility:
 # - 2022.3: interruptSpeechWhileScrolling (speech interrupt when scrolling)
 # - 2024.4: speakOnRouting (announce character when routing cursor)
+# - 2024.3: custom braille tables (brailleTables.addTable, per-addon/scratchpad directories)
 # - 2025.1: speakOnNavigatingByUnit (NVDA braille), automatic braille table selection (inputTable/translationTable "auto")
 # BrailleExtender speakScroll stays independent; turn off NVDA's "Speak when navigating by line or paragraph" to avoid duplicates.
 NVDA_HAS_INTERRUPT_SPEECH_WHILE_SCROLLING = nvdaVersionAtLeast(2022, 3)
 NVDA_HAS_SPEAK_ON_ROUTING = nvdaVersionAtLeast(2024, 4)
+NVDA_HAS_CUSTOM_BRAILLE_TABLES = nvdaVersionAtLeast(2024, 3)
 NVDA_HAS_AUTOMATIC_BRAILLE_TABLES = nvdaVersionAtLeast(2025, 1)
+
+# Config value for disabled additional Liblouis output pass (``brailleExtender.postTable``).
+POST_TABLE_NONE = "None"
 
 
 def default_braille_table_file_for_cur_language(*, is_input: bool) -> str:
@@ -141,3 +146,10 @@ MAX_STEP_DELAY_CHANGE = 7000
 RC_NORMAL = "normal"
 RC_EMULATE_ARROWS_BEEP = "arrows_beeps"
 RC_EMULATE_ARROWS_SILENT = "arrows_silent"
+
+
+def parse_braille_table_list(raw: str | list[str]) -> list[str]:
+	"""Parse a Braille Extender comma-separated table list from config (``inputTables``, etc.)."""
+	if isinstance(raw, list):
+		return [entry for entry in raw if entry]
+	return [entry for entry in raw.replace(", ", ",").split(",") if entry]

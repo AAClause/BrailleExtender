@@ -19,8 +19,8 @@ popupSettingsDialog = getattr(gui.mainFrame, "popupSettingsDialog", gui.mainFram
 import louis
 
 from . import addoncfg
+from . import braille_table_chain
 from .common import configDir
-from .utils import getTranslationTable
 from . import huc
 
 TableDictEntry = namedtuple(
@@ -77,7 +77,7 @@ def _valid_dictionary_paths() -> list[str]:
 
 def get_dictionary_path(type_: str) -> str:
 	if type_ == DICT_TYPE_TABLE:
-		path = os.path.join(configDir, "brailleDicts", getTranslationTable())
+		path = os.path.join(configDir, "brailleDicts", braille_table_chain.get_translation_table_file())
 	elif type_ == DICT_TYPE_TMP:
 		path = os.path.join(configDir, "brailleDicts", "tmp")
 	else:
@@ -128,7 +128,7 @@ def save_dictionary(type_: str, entries: list) -> bool:
 			dict_file.write(b"\n")
 		return True
 	except OSError:
-		log.error("Braille Extender: could not write dictionary %s", path, exc_info=True)
+		log.error("could not write dictionary %s", path, exc_info=True)
 		return False
 
 
@@ -162,12 +162,13 @@ def remove_temporary_dictionary() -> None:
 
 def apply_dictionary_changes(type_: str, entries: list) -> bool:
 	"""Save dictionary entries, refresh the Liblouis chain, and update braille."""
-	from . import braille_table_chain
-	from .utils import refresh_braille_for_current_focus
-
 	if not save_dictionary(type_, entries):
 		return False
-	braille_table_chain.refresh()
+	from .braille_tables import refresh_table_system
+
+	from .utils import refresh_braille_for_current_focus
+
+	refresh_table_system(apply_handlers=False)
 	refresh_braille_for_current_focus()
 	notify_invalid_dictionary_tables()
 	return True
@@ -377,7 +378,9 @@ class DictionaryEntryDlg(wx.Dialog):
 		if specifyDict:
 			# Translators: This is a label for an edit field in add dictionary entry dialog.
 			dictText = _("Dictionary")
-			outTable = addoncfg.tablesTR[addoncfg.tablesFN.index(getTranslationTable())]
+			outTable = addoncfg.tablesTR[
+				addoncfg.tablesFN.index(braille_table_chain.get_translation_table_file())
+			]
 			dictChoices = [_("Global"), _("Table ({})").format(outTable), _("Temporary")]
 			self.dictRadioBox = sHelper.addItem(wx.RadioBox(self, label=dictText, choices=dictChoices))
 			self.dictRadioBox.SetSelection(1)
@@ -424,7 +427,9 @@ class DictionaryEntryDlg(wx.Dialog):
 		self.Bind(wx.EVT_BUTTON, self.onOk, id=wx.ID_OK)
 
 	def onSeeEntriesClick(self, evt):
-		outTable = addoncfg.tablesTR[addoncfg.tablesFN.index(getTranslationTable())]
+		outTable = addoncfg.tablesTR[
+			addoncfg.tablesFN.index(braille_table_chain.get_translation_table_file())
+		]
 		label = [
 			_("Global dictionary"),
 			_("Table dictionary ({})").format(outTable),

@@ -106,6 +106,17 @@ except BaseException:
 	noUnicodeTable = True
 
 
+def refresh_braille_tables_cache() -> None:
+	"""Reload cached braille table lists after NVDA's registry changes."""
+	global tables, tablesFN, tablesUFN, tablesTR, noUnicodeTable
+	if noUnicodeTable:
+		return
+	tables = brailleTables.listTables()
+	tablesFN = [t[0] for t in tables]
+	tablesUFN = [t[0] for t in tables if not t.contracted and t.output]
+	tablesTR = [t[1] for t in tables]
+
+
 def getValidBrailleDisplayPrefered():
 	displays = braille.getDisplayList()
 	displays.append(("last", _("last known")))
@@ -174,6 +185,8 @@ def getConfspec():
 			"backup_autoTether": "boolean(default=True)",
 		},
 		"inputTableShortcuts": 'string(default="?")',
+		"activeInputTable": 'string(default="")',
+		"activeOutputTable": 'string(default="")',
 		"inputTables": 'string(default="%s")' % config.conf["braille"]["inputTable"]
 		+ ", unicode-braille.utb",
 		"outputTables": "string(default=%s)" % config.conf["braille"]["translationTable"],
@@ -313,23 +326,38 @@ def getConfspec():
 	}
 
 
-def loadPreferredTables():
+def _sync_preferred_table_list_config(config_key: str, tables: list[str]) -> None:
+	joined = ",".join(tables)
+	raw = config.conf["brailleExtender"][config_key]
+	current = ",".join(raw) if isinstance(raw, list) else raw.replace(", ", ",")
+	if joined != current:
+		config.conf["brailleExtender"][config_key] = joined
+
+
+def sync_preferred_table_lists() -> None:
+	"""Rebuild preferred input/output table lists from NVDA's registered tables and config."""
+	from . import custom_braille_tables
 	from . import utils
+	from .common import parse_braille_table_list
 
 	global inputTables, outputTables
-	listInputTables = [table[0] for table in brailleTables.listTables() if table.input]
-	listOutputTables = [table[0] for table in brailleTables.listTables() if table.output]
+	listInputTables = [table.fileName for table in brailleTables.listTables() if table.input]
+	listOutputTables = [table.fileName for table in brailleTables.listTables() if table.output]
 	if utils.supportsAutomaticBrailleTables():
 		listInputTables = ["auto"] + listInputTables
 		listOutputTables = ["auto"] + listOutputTables
-	inputTables = config.conf["brailleExtender"]["inputTables"]
-	outputTables = config.conf["brailleExtender"]["outputTables"]
-	if not isinstance(inputTables, list):
-		inputTables = inputTables.replace(", ", ",").split(",")
-	if not isinstance(outputTables, list):
-		outputTables = outputTables.replace(", ", ",").split(",")
-	inputTables = [t for t in inputTables if t in listInputTables]
-	outputTables = [t for t in outputTables if t in listOutputTables]
+	inputTables = parse_braille_table_list(config.conf["brailleExtender"]["inputTables"])
+	outputTables = parse_braille_table_list(config.conf["brailleExtender"]["outputTables"])
+	inputTables = [
+		t
+		for t in inputTables
+		if t and t in listInputTables and not custom_braille_tables.is_custom_table_configured(t)
+	]
+	outputTables = [
+		t
+		for t in outputTables
+		if t and t in listOutputTables and not custom_braille_tables.is_custom_table_configured(t)
+	]
 	if utils.supportsAutomaticBrailleTables():
 		if "auto" not in inputTables:
 			inputTables.insert(0, "auto")
@@ -337,10 +365,27 @@ def loadPreferredTables():
 			outputTables.insert(0, "auto")
 	activeInput = utils.getActiveInputTableForSwitch()
 	activeOutput = utils.getActiveOutputTableForSwitch()
-	if activeInput not in inputTables and activeInput in listInputTables:
+	if (
+		activeInput
+		and activeInput not in inputTables
+		and activeInput in listInputTables
+		and not custom_braille_tables.is_custom_table_configured(activeInput)
+	):
 		inputTables.append(activeInput)
-	if activeOutput not in outputTables and activeOutput in listOutputTables:
+	if (
+		activeOutput
+		and activeOutput not in outputTables
+		and activeOutput in listOutputTables
+		and not custom_braille_tables.is_custom_table_configured(activeOutput)
+	):
 		outputTables.append(activeOutput)
+	_sync_preferred_table_list_config("inputTables", inputTables)
+	_sync_preferred_table_list_config("outputTables", outputTables)
+
+
+def loadPreferredTables() -> None:
+	"""Legacy alias for :func:`sync_preferred_table_lists` (lists only; no NVDA registration)."""
+	sync_preferred_table_lists()
 
 
 def loadConf():
@@ -387,10 +432,6 @@ def loadConf():
 	limitCellsRight = int(config.conf["brailleExtender"]["rightMarginCells_%s" % curBD])
 	if backupDisplaySize - limitCellsRight <= backupDisplaySize and limitCellsRight > 0:
 		braille.handler.displaySize = backupDisplaySize - limitCellsRight
-	if not noUnicodeTable:
-		from . import braille_table_chain
-
-		braille_table_chain.refresh()
 	if config.conf["brailleExtender"]["inputTableShortcuts"] not in tablesUFN:
 		config.conf["brailleExtender"]["inputTableShortcuts"] = "?"
 	return True
