@@ -62,9 +62,9 @@ class FormulaScope(StrEnum):
 
 
 SCOPE_LABELS: dict[FormulaScope, str] = {
-	FormulaScope.CELL: _("Current cell only"),
-	FormulaScope.ROW: _("Current row"),
-	FormulaScope.COLUMN: _("Current column"),
+	FormulaScope.CELL: _("Focused cell only"),
+	FormulaScope.ROW: _("Entire row on one line"),
+	FormulaScope.COLUMN: _("Entire column on one line"),
 }
 
 
@@ -986,9 +986,7 @@ class AppModule(_NVDAExcelAppModule):
 		_focus_excel_current_at_display_left(handler, handler.mainBuffer)
 
 	@script(
-		description=_(
-			"Cycle how Microsoft Excel cell formulas are shown in braille (current cell, row, or column)"
-		),
+		description=_("Cycle Excel braille view (focused cell, entire row, or entire column on one line)"),
 	)
 	def script_cycleExcelFormulaScope(self, gesture):
 		if not _conf()["cellFormula"]:

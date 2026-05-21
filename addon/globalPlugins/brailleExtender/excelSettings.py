@@ -14,18 +14,18 @@ addonHandler.initTranslation()
 
 conf = config.conf["brailleExtender"]["excel"]
 
-# Translators: when to show formulas in row/column scope (Braille Extender Excel settings).
+# Translators: formula display when Braille view is entire row or column (Braille Extender Excel settings).
 _SCOPE_FORMULA_LABELS = {
-	ScopeFormulaDisplay.ACTIVE_CELL: _("Active cell only"),
-	ScopeFormulaDisplay.ALL: _("All cells in range"),
-	ScopeFormulaDisplay.NONE: _("Values only (hide formulas)"),
+	ScopeFormulaDisplay.ACTIVE_CELL: _("Focused cell only"),
+	ScopeFormulaDisplay.ALL: _("Every cell on the line"),
+	ScopeFormulaDisplay.NONE: _("Values only (no formulas)"),
 }
 
 
 class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 	# Translators: title of the Excel category in Braille Extender settings.
 	title = _("Excel")
-	panelDescription = _("Options for reporting Microsoft Excel cell formulas in braille.")
+	panelDescription = _("Choose how Microsoft Excel cells and formulas appear on the braille display.")
 
 	def makeSettings(self, settingsSizer: wx.Sizer) -> None:
 		sHelper = gui.guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
@@ -36,7 +36,7 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		self.cellFormula.Bind(wx.EVT_CHECKBOX, self._onChanged)
 
 		self.cellFormulaScope = sHelper.addLabeledControl(
-			_("Formula &scope:"),
+			_("Braille &view:"),
 			wx.Choice,
 			choices=[SCOPE_LABELS[scope] for scope in FormulaScope],
 		)
@@ -49,7 +49,7 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		self.cellFormulaScope.Bind(wx.EVT_CHOICE, self._onChanged)
 
 		self.scopeFormulaDisplay = sHelper.addLabeledControl(
-			_("Show &formulas in row/column scope:"),
+			_("Formulas on row or column &line:"),
 			wx.Choice,
 			choices=[_SCOPE_FORMULA_LABELS[mode] for mode in ScopeFormulaDisplay],
 		)
@@ -62,14 +62,14 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		self.scopeFormulaDisplay.Bind(wx.EVT_CHOICE, self._onChanged)
 
 		self.cellFormulaNeighbors = sHelper.addLabeledControl(
-			_("Number of cells before and after (row/column scope):"),
+			_("Cells on each side of focus (&row/column line):"),
 			gui.nvdaControls.SelectOnFocusSpinCtrl,
 			min=0,
 			max=50,
 			initial=int(conf["cellFormulaNeighbors"]),
 		)
 		self.cellFormulaSeparator = sHelper.addLabeledControl(
-			_("Cell &separator (row/column scope):"),
+			_("&Separator between cells on the line:"),
 			wx.TextCtrl,
 		)
 		self.cellFormulaSeparator.SetValue(conf["cellFormulaSeparator"])
