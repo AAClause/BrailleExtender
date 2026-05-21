@@ -292,18 +292,18 @@ This setting controls **how much of the sheet** appears on the braille display a
 | Choice | What you see |
 |--------|----------------|
 | **Focused cell only** (default) | The cell you are in, as usual, plus its formula when the cell has one. Same layout as normal NVDA braille for that cell. |
-| **Entire row on one line** | One braille line for the **row** you are in, from the first used cell to the last used cell in the range (see below). |
-| **Entire column on one line** | The same idea for the **column** you are in. |
+| **Row range on one line** | A **portion of the row** around your cell on one braille line—not the full worksheet row. How many cells each side is set under **Cells on each side of focus** (default **9**). The line may be shorter: only from the first to the last **non-empty** cell in that window. |
+| **Column range on one line** | The same for the **column** around your cell (again a limited range, not the whole column). |
 
-Row and column views are meant for skimming **neighboring cells** without moving focus cell by cell.
+Row and column range views are meant for skimming **nearby cells** without moving focus cell by cell.
 
-You can also change **Braille view** from the keyboard while Excel is running: in **NVDA → Preferences → Input gestures**, assign **Cycle Excel braille view (focused cell, entire row, or entire column on one line)** (listed under **Braille Extender**). There is no default shortcut; each press moves through **Focused cell only**, **Entire row on one line**, then **Entire column on one line**, and back to the start. The gesture only works when **Report cell formulas in braille** is enabled.
+You can also change **Braille view** from the keyboard while Excel is running: in **NVDA → Preferences → Input gestures**, assign **Cycle Excel braille view (focused cell, row range, or column range on one line)** (listed under **Braille Extender**). There is no default shortcut; each press moves through **Focused cell only**, **Row range on one line**, then **Column range on one line**, and back to the start. The gesture only works when **Report cell formulas in braille** is enabled.
 
-In **Focused cell only** view, braille panning behaves like normal NVDA (your place on the line is kept when you move between cells). In **Entire row on one line** or **Entire column on one line** view, the **focused cell** is kept at the **left** of the braille display when you move to another cell, so the overview line stays aligned.
+In **Focused cell only** view, braille panning behaves like normal NVDA (your place on the line is kept when you move between cells). In **Row range on one line** or **Column range on one line** view, the **focused cell** is kept at the **left** of the braille display when you move to another cell, so the overview line stays aligned.
 
 #### Formulas on row or column line
 
-This list applies only when **Braille view** is **Entire row on one line** or **Entire column on one line**:
+This list applies only when **Braille view** is **Row range on one line** or **Column range on one line**:
 
 | Choice | Meaning |
 |--------|---------|
@@ -313,9 +313,9 @@ This list applies only when **Braille view** is **Entire row on one line** or **
 
 #### Cells on each side of focus
 
-When **Braille view** is **Entire row on one line** or **Entire column on one line**, this number sets how many cells **to the left and right** (on a row) or **above and below** (in a column) may be included. Default is **9** (up to **19** cells on the line: 9 + your cell + 9). You can set **0** to **50**.
+When **Braille view** is **Row range on one line** or **Column range on one line**, this number is the maximum cells **to the left and right** of your cell (on a row) or **above and below** (in a column) that can appear on the line. Default is **9** (up to **19** positions: 9 + your cell + 9). You can set **0** to **50**.
 
-The line is **not** always the full width. It starts at the **first cell in that direction that has something in it** (or is your current cell) and ends at the **last** such cell. Empty cells **between** two cells that have content are included as blank gaps on the line.
+The line is usually **shorter** than that maximum: it runs from the first to the last **non-empty** cell in the window. Empty cells **between** two cells that have content still appear as blank gaps on the line.
 
 #### Separator between cells on the line
 
@@ -334,7 +334,7 @@ Examples (default separator):
 
 #### Routing keys on a row or column line
 
-When **Braille view** is **Entire row on one line** or **Entire column on one line**, each part of the line is tied to **one cell**:
+When **Braille view** is **Row range on one line** or **Column range on one line**, each part of the line is tied to **one cell**:
 
 - Press a **routing key** on the **current** cell’s value (for example under `Hello` in `A2: Hello`) to **edit** that cell, like routing on a normal Excel cell in NVDA.
 - Press a routing key on a **neighbor’s** value (or on an empty gap for an empty cell) to **move** to that cell.

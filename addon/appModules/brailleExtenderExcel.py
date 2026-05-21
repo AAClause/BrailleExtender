@@ -63,8 +63,8 @@ class FormulaScope(StrEnum):
 
 SCOPE_LABELS: dict[FormulaScope, str] = {
 	FormulaScope.CELL: _("Focused cell only"),
-	FormulaScope.ROW: _("Entire row on one line"),
-	FormulaScope.COLUMN: _("Entire column on one line"),
+	FormulaScope.ROW: _("Row range on one line"),
+	FormulaScope.COLUMN: _("Column range on one line"),
 }
 
 
@@ -136,7 +136,7 @@ def _getScopedRangeWindow(
 	scope: FormulaScope | None = None,
 ) -> list[EXCEL_CELLINFO] | None:
 	scope = scope or _scope()
-	if not _conf()["cellFormula"] or not scope.isRowOrColumn:
+	if not scope.isRowOrColumn:
 		return None
 	settings_key = _scopedSettingsKey()
 	cache_key = id(obj)
@@ -279,7 +279,26 @@ def _currentCoords(obj: NVDAObject, cellInfo: EXCEL_CELLINFO | None) -> str | No
 			return obj.cellCoordsText
 	except (AttributeError, NotImplementedError):
 		pass
-	return _localAddress(cellInfo) if cellInfo else None
+	if cellInfo:
+		local = _localAddress(cellInfo)
+		if local:
+			return local
+		row = cellInfo.rowNumber
+		column = cellInfo.columnNumber
+		if row and column:
+			return f"{_columnLabel(column)}{row}"
+	try:
+		row = obj.rowNumber
+		column = obj.columnNumber
+		if row and column:
+			return f"{_columnLabel(column)}{row}"
+	except (AttributeError, NotImplementedError, TypeError):
+		pass
+	context = _getExcelCellContext(obj)
+	if context is not None:
+		_, row, column, _, _ = context
+		return f"{_columnLabel(column)}{row}"
+	return None
 
 
 def _cellContent(cellInfo: EXCEL_CELLINFO, *, isCurrent: bool) -> str:
@@ -287,17 +306,19 @@ def _cellContent(cellInfo: EXCEL_CELLINFO, *, isCurrent: bool) -> str:
 		return ""
 	formula = (cellInfo.formula or "").strip()
 	text = (cellInfo.text or "").strip()
-	if _isExcelFormula(formula) and _includeFormulaForCell(isCurrent):
+	if _isExcelFormula(formula) and _conf()["cellFormula"] and _includeFormulaForCell(isCurrent):
 		return f"{text} {formula}" if text else formula
 	return text
 
 
 def _hasDisplayContent(cellInfo: EXCEL_CELLINFO, *, isCurrent: bool) -> bool:
-	if not isCurrent and not _isPrimaryMergeCell(cellInfo):
+	if isCurrent:
+		return True
+	if not _isPrimaryMergeCell(cellInfo):
 		return False
 	if (cellInfo.text or "").strip():
 		return True
-	return _isExcelFormula(cellInfo.formula) and _includeFormulaForCell(isCurrent)
+	return _conf()["cellFormula"] and _isExcelFormula(cellInfo.formula) and _includeFormulaForCell(isCurrent)
 
 
 def _buildScopedWindow(
@@ -386,7 +407,8 @@ def _fetchScopedRangeCellInfos(
 	if cellInfo and not any(ci.rowNumber == row and ci.columnNumber == column for ci in fetched):
 		fetched.append(cellInfo)
 	byPosition = _indexCellInfosByPosition(fetched)
-	return _buildScopedWindow(byPosition, scope, row, column, neighbors) or None
+	window = _buildScopedWindow(byPosition, scope, row, column, neighbors)
+	return window if window else None
 
 
 def _currentCellScopeDisplay(cellInfo: EXCEL_CELLINFO, obj: NVDAObject | None) -> str:
@@ -419,7 +441,7 @@ def iterScopedBrailleSegments(
 	obj: NVDAObject,
 	window: list[EXCEL_CELLINFO] | None = None,
 ) -> Generator[ScopedBrailleSegment, None, None]:
-	if not _conf()["cellFormula"] or not _scope().isRowOrColumn:
+	if not _scope().isRowOrColumn:
 		return
 	cellInfo: EXCEL_CELLINFO | None = getattr(obj, "excelCellInfo", None)
 	if window is None:
@@ -458,7 +480,7 @@ def usesScopedBrailleRegions(
 	obj: NVDAObject | None,
 	window: list[EXCEL_CELLINFO] | None = None,
 ) -> bool:
-	if obj is None or not _conf()["cellFormula"] or not _scope().isRowOrColumn:
+	if obj is None or not _scope().isRowOrColumn:
 		return False
 	if window is not None:
 		return bool(window)
@@ -525,7 +547,11 @@ def navigateToExcelCell(focusCell: ExcelCell, row: int, column: int) -> ExcelCel
 
 
 def _cellScopeFormulaText(cellInfo: EXCEL_CELLINFO) -> str | None:
-	if not _isExcelFormula(cellInfo.formula) or not _includeFormulaForCell(isCurrent=True):
+	if (
+		not _conf()["cellFormula"]
+		or not _isExcelFormula(cellInfo.formula)
+		or not _includeFormulaForCell(isCurrent=True)
+	):
 		return None
 	formula = (cellInfo.formula or "").strip()
 	return formula or None
@@ -701,7 +727,7 @@ def uninstall_excel_braille_regions() -> None:
 
 
 def sync_excel_braille_regions_patch() -> None:
-	if _conf()["cellFormula"] and _scope().isRowOrColumn:
+	if _scope().isRowOrColumn:
 		install_excel_braille_regions()
 	else:
 		uninstall_excel_braille_regions()
@@ -829,7 +855,7 @@ def _apply_braille_buffer_focus_regions(
 
 def _build_excel_focus_regions(focus: NVDAObject) -> list:
 	window = _getScopedRangeWindow(focus, getattr(focus, "excelCellInfo", None))
-	if _conf()["cellFormula"] and _scope().isRowOrColumn and window:
+	if _scope().isRowOrColumn and window:
 		regions = _excelCellBrailleRegionsFromWindow(focus, window)
 		for region in regions:
 			region.update()
@@ -857,7 +883,7 @@ def refresh_excel_braille_display() -> None:
 	contextRegions, focusRegions = _partition_braille_buffer_regions(oldRegions)
 	scopedWindow = (
 		_getScopedRangeWindow(focus, getattr(focus, "excelCellInfo", None))
-		if _conf()["cellFormula"] and _scope().isRowOrColumn
+		if _scope().isRowOrColumn
 		else None
 	)
 	wasScopedLine = bool(focusRegions) and isinstance(focusRegions[0], ExcelCellBrailleRegion)
@@ -973,7 +999,7 @@ class AppModule(_NVDAExcelAppModule):
 
 	def event_gainFocus(self, obj, nextHandler):
 		nextHandler()
-		if not _conf()["cellFormula"] or not _scope().isRowOrColumn:
+		if not _scope().isRowOrColumn:
 			return
 		focus = _excel_focus_object_for_braille()
 		if focus is None:
@@ -986,7 +1012,7 @@ class AppModule(_NVDAExcelAppModule):
 		_focus_excel_current_at_display_left(handler, handler.mainBuffer)
 
 	@script(
-		description=_("Cycle Excel braille view (focused cell, entire row, or entire column on one line)"),
+		description=_("Cycle Excel braille view (focused cell, row range, or column range on one line)"),
 	)
 	def script_cycleExcelFormulaScope(self, gesture):
 		if not _conf()["cellFormula"]:

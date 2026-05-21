@@ -14,7 +14,7 @@ addonHandler.initTranslation()
 
 conf = config.conf["brailleExtender"]["excel"]
 
-# Translators: formula display when Braille view is entire row or column (Braille Extender Excel settings).
+# Translators: formula display when Braille view is row or column range (Braille Extender Excel settings).
 _SCOPE_FORMULA_LABELS = {
 	ScopeFormulaDisplay.ACTIVE_CELL: _("Focused cell only"),
 	ScopeFormulaDisplay.ALL: _("Every cell on the line"),
