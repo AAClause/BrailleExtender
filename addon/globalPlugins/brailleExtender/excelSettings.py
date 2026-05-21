@@ -90,12 +90,11 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		self.cellFormulaSeparator.Enable(rowCol)
 
 	def onSave(self) -> None:
-		from appModules.brailleExtenderExcel import clear_scoped_braille_cache, refresh_excel_braille_display
+		from appModules.brailleExtenderExcel import schedule_excel_braille_refresh
 
 		conf["cellFormula"] = self.cellFormula.IsChecked()
-		conf["cellFormulaScope"] = list(FormulaScope)[self.cellFormulaScope.GetSelection()]
-		conf["scopeFormulaDisplay"] = list(ScopeFormulaDisplay)[self.scopeFormulaDisplay.GetSelection()]
-		conf["cellFormulaNeighbors"] = self.cellFormulaNeighbors.GetValue()
+		conf["cellFormulaScope"] = list(FormulaScope)[self.cellFormulaScope.GetSelection()].value
+		conf["scopeFormulaDisplay"] = list(ScopeFormulaDisplay)[self.scopeFormulaDisplay.GetSelection()].value
+		conf["cellFormulaNeighbors"] = int(self.cellFormulaNeighbors.GetValue())
 		conf["cellFormulaSeparator"] = self.cellFormulaSeparator.GetValue()
-		clear_scoped_braille_cache()
-		refresh_excel_braille_display()
+		schedule_excel_braille_refresh()

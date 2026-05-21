@@ -16,6 +16,7 @@ import addonHandler
 import api
 import braille
 import config
+import core
 import eventHandler
 import keyboardHandler
 from comtypes import COMError
@@ -105,7 +106,7 @@ def cycle_formula_scope() -> FormulaScope:
 	scopes = list(FormulaScope)
 	current = _scope()
 	new_scope = scopes[(scopes.index(current) + 1) % len(scopes)]
-	_conf()["cellFormulaScope"] = new_scope
+	_conf()["cellFormulaScope"] = new_scope.value
 	return new_scope
 
 
@@ -716,6 +717,35 @@ def _excel_focus_object_for_braille() -> NVDAObject | None:
 	return None
 
 
+def _excel_cell_from_braille_buffer(handler: braille.BrailleHandler) -> NVDAObject | None:
+	for region in reversed(handler.mainBuffer.regions):
+		if isinstance(region, ExcelCellBrailleRegion):
+			cell = region._focusCell or region.obj
+			if cell is not None:
+				return cell
+		regionObj = getattr(region, "obj", None)
+		if regionObj is not None and (
+			hasattr(regionObj, "excelCellInfo") or hasattr(regionObj, "excelCellObject")
+		):
+			return regionObj
+	return None
+
+
+def _resolve_excel_cell_for_braille_refresh() -> NVDAObject | None:
+	cell = _excel_focus_object_for_braille()
+	if cell is not None:
+		return cell
+	handler = braille.handler
+	if handler is None or not handler.enabled:
+		return None
+	return _excel_cell_from_braille_buffer(handler)
+
+
+def schedule_excel_braille_refresh() -> None:
+	# Defer until the settings dialog closes; focus is not on a cell during onSave.
+	core.callLater(0, refresh_excel_braille_display)
+
+
 def _partition_braille_buffer_regions(regions: list) -> tuple[list, list]:
 	contextRegions: list = []
 	focusRegions: list = []
@@ -814,11 +844,11 @@ def refresh_excel_braille_display() -> None:
 	handler = braille.handler
 	if handler is None or not handler.enabled:
 		return
-	focus = _excel_focus_object_for_braille()
+	sync_excel_braille_regions_patch()
+	clear_scoped_braille_cache()
+	focus = _resolve_excel_cell_for_braille_refresh()
 	if focus is None:
 		return
-	sync_excel_braille_regions_patch()
-	clear_scoped_braille_cache(focus)
 	focus.invalidateCache()
 	if handler.buffer is not handler.mainBuffer:
 		handler.buffer = handler.mainBuffer
@@ -970,6 +1000,5 @@ class AppModule(_NVDAExcelAppModule):
 			)
 			return
 		new_scope = cycle_formula_scope()
-		clear_scoped_braille_cache()
 		refresh_excel_braille_display()
 		speakMessage(new_scope.label)
