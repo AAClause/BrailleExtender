@@ -321,13 +321,24 @@ The line is usually **shorter** than that maximum: it runs from the first to the
 
 Text placed **between** each cell on a row or column line. Default is a space, vertical bar, space: ` | `. You can change it (for example to ` - ` or `, `) to suit your reading style.
 
+#### Row and column line prefixes
+
+When **Braille view** is **Row range on one line** or **Column range on one line**, a short **prefix** is shown at the **start** of the braille line, **before** the current cell address. NVDA adds **one space** after the prefix automatically—do **not** put a trailing space in the setting.
+
+| Field | Default (English) | Role |
+|-------|-------------------|------|
+| **Row line prefix** | `row` | Row-range lines (example: `row A2: Hello | …`) |
+| **Column line prefix** | `col` | Column-range lines (example: `col A2: Hello | …`) |
+
+Leave a field **empty** to use the **translated** default for your NVDA language. Type your own short label (for example `R` or `Ln`) if you prefer something different on the display.
+
 #### How a row or column line looks
 
-Examples (default separator):
+Examples (default separator and prefixes):
 
 - Row **2**, you are in **A2** with value `Hello`, empty **B2–F2**, value `99` in **G2**:  
-  `r2 A2: Hello |  |  |  |  |  | 99`
-- The **`r2`** or **`cD`** prefix reminds you which row or column the line belongs to.
+  `row A2: Hello |  |  |  |  |  | 99`
+- The prefix (**`row`** or **`col`** by default, or your custom text) shows whether the line is a row range or a column range; the **current cell address** (`A2:`) comes immediately after that prefix and a single space.
 - Only the **current** cell uses its address in the line (for example `A2: Hello`). Other cells show only their value (or nothing if empty).
 - **Empty** cells between two cells with content appear as separator with nothing between (for example ` |  | `).
 - **Row and column headers** you have set up in the workbook (the extra labels NVDA can announce for the current cell) are shown after the **current** cell’s part of the line, not after every neighbor.

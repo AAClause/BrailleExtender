@@ -73,6 +73,23 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 			wx.TextCtrl,
 		)
 		self.cellFormulaSeparator.SetValue(conf["cellFormulaSeparator"])
+
+		# Translators: Label for the custom text shown at the start of an Excel row-range braille line.
+		self.rowAxisPrefix = sHelper.addLabeledControl(_("&Row line prefix:"), wx.TextCtrl)
+		self.rowAxisPrefix.SetValue(conf["rowAxisPrefix"])
+		# Translators: Label for the custom text shown at the start of an Excel column-range braille line.
+		self.columnAxisPrefix = sHelper.addLabeledControl(_("&Column line prefix:"), wx.TextCtrl)
+		self.columnAxisPrefix.SetValue(conf["columnAxisPrefix"])
+		# Translators: Hint under the row/column line prefix fields in Braille Extender Excel settings.
+		sHelper.addItem(
+			wx.StaticText(
+				self,
+				label=_(
+					"Leave empty to use the translated default. "
+					"Do not type a space at the end; one space is added automatically before the cell address."
+				),
+			)
+		)
 		self._onChanged()
 
 	def _rowOrColumnScope(self) -> bool:
@@ -88,6 +105,8 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		self.scopeFormulaDisplay.Enable(enabled and rowCol)
 		self.cellFormulaNeighbors.Enable(rowCol)
 		self.cellFormulaSeparator.Enable(rowCol)
+		self.rowAxisPrefix.Enable(rowCol)
+		self.columnAxisPrefix.Enable(rowCol)
 
 	def onSave(self) -> None:
 		from appModules.brailleExtenderExcel import schedule_excel_braille_refresh
@@ -97,4 +116,6 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		conf["scopeFormulaDisplay"] = list(ScopeFormulaDisplay)[self.scopeFormulaDisplay.GetSelection()].value
 		conf["cellFormulaNeighbors"] = int(self.cellFormulaNeighbors.GetValue())
 		conf["cellFormulaSeparator"] = self.cellFormulaSeparator.GetValue()
+		conf["rowAxisPrefix"] = self.rowAxisPrefix.GetValue().strip()
+		conf["columnAxisPrefix"] = self.columnAxisPrefix.GetValue().strip()
 		schedule_excel_braille_refresh()

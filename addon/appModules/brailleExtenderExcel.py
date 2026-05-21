@@ -56,16 +56,19 @@ class FormulaScope(StrEnum):
 	def isRowOrColumn(self) -> bool:
 		return self in (FormulaScope.ROW, FormulaScope.COLUMN)
 
-	@property
-	def prefixLetter(self) -> str:
-		return "r" if self == FormulaScope.ROW else "c"
-
 
 SCOPE_LABELS: dict[FormulaScope, str] = {
 	FormulaScope.CELL: _("Focused cell only"),
 	FormulaScope.ROW: _("Row range on one line"),
 	FormulaScope.COLUMN: _("Column range on one line"),
 }
+
+# Translators: Default short label at the start of an Excel row-range braille line, before the cell address.
+# English example on the display: "row A2: sale |  | 99". Keep brief. Do not add spaces at the end.
+_AXIS_PREFIX_ROW_DEFAULT = pgettext("excelBrailleAxis", "row")
+# Translators: Default short label at the start of an Excel column-range braille line, before the cell address.
+# English example on the display: "col A2: sale |  | 99". Keep brief. Do not add spaces at the end.
+_AXIS_PREFIX_COLUMN_DEFAULT = pgettext("excelBrailleAxis", "col")
 
 
 class ScopeFormulaDisplay(StrEnum):
@@ -116,12 +119,30 @@ _scopedWindowCache: dict[
 ] = {}
 
 
+def _configuredAxisPrefix(configKey: str, default: str) -> str:
+	custom = str(_conf()[configKey] or "").strip()
+	return custom if custom else default
+
+
+def _scopedLinePrefix(scope: FormulaScope | None = None) -> str:
+	scope = scope or _scope()
+	if scope == FormulaScope.ROW:
+		text = _configuredAxisPrefix("rowAxisPrefix", _AXIS_PREFIX_ROW_DEFAULT)
+	elif scope == FormulaScope.COLUMN:
+		text = _configuredAxisPrefix("columnAxisPrefix", _AXIS_PREFIX_COLUMN_DEFAULT)
+	else:
+		return ""
+	return f"{text} "
+
+
 def _scopedSettingsKey() -> tuple[Any, ...]:
 	return (
 		_scope(),
 		int(_conf()["cellFormulaNeighbors"]),
 		_scopeFormulaDisplay(),
 		str(_conf()["cellFormulaSeparator"] or " | "),
+		_configuredAxisPrefix("rowAxisPrefix", _AXIS_PREFIX_ROW_DEFAULT),
+		_configuredAxisPrefix("columnAxisPrefix", _AXIS_PREFIX_COLUMN_DEFAULT),
 	)
 
 
@@ -528,12 +549,7 @@ def _minimalScopedSegment(
 	currentColumn: int,
 	currentCoords: str,
 ) -> ScopedBrailleSegment:
-	scope = _scope()
-	linePrefix = (
-		f"{scope.prefixLetter}{currentRow} "
-		if scope == FormulaScope.ROW
-		else f"{scope.prefixLetter}{_columnLabel(currentColumn)} "
-	)
+	linePrefix = _scopedLinePrefix()
 	cellInfo = next(
 		(info for info in window if _cellInfoIsCurrentFocus(info, currentRow, currentColumn)),
 		None,
@@ -604,12 +620,7 @@ def iterScopedBrailleSegments(
 	currentRow, currentColumn, currentCoords = position
 
 	separator = str(_conf()["cellFormulaSeparator"] or " | ")
-	scope = _scope()
-	linePrefix = (
-		f"{scope.prefixLetter}{currentRow} "
-		if scope == FormulaScope.ROW
-		else f"{scope.prefixLetter}{_columnLabel(currentColumn)} "
-	)
+	linePrefix = _scopedLinePrefix()
 
 	for index, info in enumerate(window):
 		isCurrent = _cellInfoIsCurrentFocus(info, currentRow, currentColumn)

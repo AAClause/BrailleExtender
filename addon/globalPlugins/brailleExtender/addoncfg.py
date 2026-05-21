@@ -132,6 +132,8 @@ def _excelConfspec() -> dict[str, str]:
 		"scopeFormulaDisplay": f"option({', '.join(s.value for s in ScopeFormulaDisplay)}, default={ScopeFormulaDisplay.ACTIVE_CELL})",
 		"cellFormulaNeighbors": "integer(min=0, max=50, default=9)",
 		"cellFormulaSeparator": "string(default=' | ')",
+		"rowAxisPrefix": "string(default='')",
+		"columnAxisPrefix": "string(default='')",
 	}
 
 
