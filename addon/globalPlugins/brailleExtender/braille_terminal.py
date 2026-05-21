@@ -33,7 +33,7 @@ def _object_below_lock_screen(obj: Any) -> bool:
 	except ImportError:
 		return False
 	except Exception:
-		log.debugWarning("BrailleExtender: could not evaluate lock screen state", exc_info=True)
+		log.debugWarning("could not evaluate lock screen state", exc_info=True)
 		return True
 
 
@@ -90,7 +90,7 @@ def _sync_review_position_to_object_caret(obj: Any) -> None:
 			info = obj.makeTextInfo(textInfos.POSITION_FIRST)
 		except Exception:
 			log.debugWarning(
-				"BrailleExtender: cannot obtain TextInfo to sync review in terminal",
+				"cannot obtain TextInfo to sync review in terminal",
 				exc_info=True,
 			)
 			return
@@ -98,7 +98,7 @@ def _sync_review_position_to_object_caret(obj: Any) -> None:
 		info.collapse()
 		api.setReviewPosition(info)
 	except Exception:
-		log.debugWarning("BrailleExtender: setReviewPosition for terminal failed", exc_info=True)
+		log.debugWarning("setReviewPosition for terminal failed", exc_info=True)
 
 
 def _restore_tether_after_terminal(handler: Any) -> None:

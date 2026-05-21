@@ -110,7 +110,7 @@ def _stop_nvda_core_autoscroll() -> None:
 	try:
 		auto_scroll(enable=False)
 	except Exception:
-		log.debugWarning("BrailleExtender: could not disable NVDA core auto scroll", exc_info=True)
+		log.debugWarning("could not disable NVDA core auto scroll", exc_info=True)
 
 
 def _saveOriginals():
@@ -538,7 +538,7 @@ def _prepare_format_field_for_braille(field: dict[str, Any]) -> None:
 
 		normalizeIA2TextFormatField(field)
 	except Exception:
-		log.debugWarning("BrailleExtender: normalizeIA2TextFormatField failed", exc_info=True)
+		log.debugWarning("normalizeIA2TextFormatField failed", exc_info=True)
 
 
 def _text_position_matches_bucket(raw: Any, want: str) -> bool:
@@ -605,14 +605,12 @@ def _try_append_nvda_core_formatting_markers(
 			if not marker.shouldBeUsed(key):
 				continue
 		except Exception:
-			log.debugWarning("BrailleExtender: NVDA marker shouldBeUsed failed for %s", key, exc_info=True)
+			log.debugWarning("NVDA marker shouldBeUsed failed for %s", key, exc_info=True)
 			continue
 		try:
 			append_fn(key, marker, parts, field, fieldCache)
 		except Exception:
-			log.debugWarning(
-				"BrailleExtender: NVDA _appendFormattingMarker failed for %s", key, exc_info=True
-			)
+			log.debugWarning("NVDA _appendFormattingMarker failed for %s", key, exc_info=True)
 	if not parts:
 		# NVDA did not emit any markers; allow ``getFormatFieldBraille`` fallbacks (e.g. tags when
 		# attributes are delegated to NVDA core but markers are empty).
@@ -676,7 +674,7 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 					if marker:
 						textList.append(marker)
 				except Exception:
-					log.debugWarning("BrailleExtender: getParagraphStartMarker failed", exc_info=True)
+					log.debugWarning("getParagraphStartMarker failed", exc_info=True)
 		if formatConfig["reportParagraphIndentation"] and use_be_format_field_chrome("paragraphIndentation"):
 			indentLabels = {
 				"left-indent": (N_("left indent"), N_("no left indent")),
@@ -717,7 +715,7 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 			try:
 				textList.append(braille.positiveStateLabels[controlTypes.State.COLLAPSED])
 			except Exception:
-				log.debugWarning("BrailleExtender: collapsed state label failed", exc_info=True)
+				log.debugWarning("collapsed state label failed", exc_info=True)
 
 	if formatConfig["reportPage"] and use_be_format_field_chrome("page"):
 		pageNumber = field.get("page-number")
@@ -1504,7 +1502,7 @@ def _try_apply(name: str, apply_fn) -> bool:
 		_appliedPatches.add(name)
 		return True
 	except Exception as e:
-		log.warning("BrailleExtender: Could not apply patch %s: %s", name, e, exc_info=True)
+		log.warning("Could not apply patch %s: %s", name, e, exc_info=True)
 		return False
 
 
@@ -1588,13 +1586,27 @@ def apply_patches() -> None:
 
 	_patchesApplied = len(_appliedPatches) > 0
 	if not _patchesApplied:
-		log.error("BrailleExtender: No patches could be applied; add-on may not function correctly")
+		log.error("No patches could be applied; add-on may not function correctly")
 	else:
-		log.debug("BrailleExtender: Applied %d patch groups: %s", len(_appliedPatches), _appliedPatches)
-		try:
-			speechhistorymode.install()
-		except Exception:
-			log.warning("BrailleExtender: could not install speech history hooks", exc_info=True)
+		log.debug("Applied %d patch groups: %s", len(_appliedPatches), _appliedPatches)
+	_install_excel_braille_helpers()
+	try:
+		speechhistorymode.install()
+	except Exception:
+		log.warning("could not install speech history hooks", exc_info=True)
+
+
+def _install_excel_braille_helpers() -> None:
+	try:
+		from appModules.brailleExtenderExcel import (
+			install_excel_header_text_guards,
+			sync_excel_braille_regions_patch,
+		)
+
+		install_excel_header_text_guards()
+		sync_excel_braille_regions_patch()
+	except Exception:
+		log.warning("could not install Excel braille helpers", exc_info=True)
 
 
 def is_patch_applied(name: str) -> bool:
@@ -1623,6 +1635,16 @@ def unload_patches() -> None:
 	_appliedPatches.clear()
 
 	speechhistorymode.uninstall()
+	try:
+		from appModules.brailleExtenderExcel import (
+			uninstall_excel_braille_regions,
+			uninstall_excel_header_text_guards,
+		)
+
+		uninstall_excel_braille_regions()
+		uninstall_excel_header_text_guards()
+	except Exception:
+		pass
 
 	if "executeGesture" in applied:
 		try:
@@ -1651,7 +1673,7 @@ def unload_patches() -> None:
 				except AttributeError:
 					pass
 		except Exception as e:
-			log.warning("BrailleExtender: Error restoring braille_region patches: %s", e)
+			log.warning("Error restoring braille_region patches: %s", e)
 
 	if "braille_input" in applied:
 		try:
@@ -1660,13 +1682,13 @@ def unload_patches() -> None:
 			brailleInput.BrailleInputHandler.input = _originals["BrailleInputHandler.input"]
 			brailleInput.BrailleInputHandler.sendChars = _originals["BrailleInputHandler.sendChars"]
 		except Exception as e:
-			log.warning("BrailleExtender: Error restoring braille_input patches: %s", e)
+			log.warning("Error restoring braille_input patches: %s", e)
 
 	if "script_braille_routeTo" in applied:
 		try:
 			globalCommands.GlobalCommands.script_braille_routeTo = _originals["script_braille_routeTo"]
 		except Exception as e:
-			log.warning("BrailleExtender: Error restoring script_braille_routeTo: %s", e)
+			log.warning("Error restoring script_braille_routeTo: %s", e)
 
 	if "braille_handler" in applied:
 		try:
@@ -1694,12 +1716,12 @@ def unload_patches() -> None:
 				except AttributeError:
 					pass
 		except Exception as e:
-			log.warning("BrailleExtender: Error restoring braille_handler patches: %s", e)
+			log.warning("Error restoring braille_handler patches: %s", e)
 
 	if "louis_createTablesString" in applied and "_createTablesString" in _originals:
 		try:
 			louis._createTablesString = _originals["_createTablesString"]
 		except Exception as e:
-			log.warning("BrailleExtender: Error restoring louis patch: %s", e)
+			log.warning("Error restoring louis patch: %s", e)
 
-	log.info("BrailleExtender patches unloaded")
+	log.info("patches unloaded")
