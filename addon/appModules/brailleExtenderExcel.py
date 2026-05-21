@@ -110,7 +110,10 @@ def cycle_formula_scope() -> FormulaScope:
 	return new_scope
 
 
-_scopedWindowCache: dict[int, tuple[tuple[Any, ...], list[EXCEL_CELLINFO] | None]] = {}
+_scopedWindowCache: dict[
+	tuple[int, tuple[int, int] | None],
+	tuple[tuple[Any, ...], list[EXCEL_CELLINFO] | None],
+] = {}
 
 
 def _scopedSettingsKey() -> tuple[Any, ...]:
@@ -123,10 +126,26 @@ def _scopedSettingsKey() -> tuple[Any, ...]:
 
 
 def clear_scoped_braille_cache(obj: NVDAObject | None = None) -> None:
+	global _scopedWindowCache
 	if obj is None:
 		_scopedWindowCache.clear()
-	else:
-		_scopedWindowCache.pop(id(obj), None)
+		return
+	obj_id = id(obj)
+	for key in list(_scopedWindowCache):
+		if isinstance(key, tuple) and key and key[0] == obj_id:
+			del _scopedWindowCache[key]
+
+
+def _coordsToRowColumn(coords: str) -> tuple[int, int] | None:
+	local = coords.split(" through ")[0].strip().replace("$", "")
+	match = _ADDRESS_SPLIT_RE.match(local)
+	if not match:
+		return None
+	row = int(match.group(2))
+	column = _columnNumberFromLabel(match.group(1))
+	if row < 1 or column < 1:
+		return None
+	return row, column
 
 
 def _getScopedRangeWindow(
@@ -139,7 +158,9 @@ def _getScopedRangeWindow(
 	if not scope.isRowOrColumn:
 		return None
 	settings_key = _scopedSettingsKey()
-	cache_key = id(obj)
+	position = _focusRowColumn(obj, cellInfo)
+	position_key = position[:2] if position else None
+	cache_key = (id(obj), position_key)
 	cached = _scopedWindowCache.get(cache_key)
 	if cached is not None and cached[0] == settings_key:
 		return cached[1]
@@ -301,6 +322,60 @@ def _currentCoords(obj: NVDAObject, cellInfo: EXCEL_CELLINFO | None) -> str | No
 	return None
 
 
+def _focusRowColumn(
+	obj: NVDAObject,
+	cellInfo: EXCEL_CELLINFO | None,
+) -> tuple[int, int, str] | None:
+	"""Row, column, and A1-style label for the focused cell in scoped braille."""
+	row: int | None = None
+	column: int | None = None
+	context = _getExcelCellContext(obj)
+	if context is not None:
+		row, column = int(context[1]), int(context[2])
+	if (row is None or column is None or row < 1 or column < 1) and cellInfo:
+		if cellInfo.rowNumber >= 1 and cellInfo.columnNumber >= 1:
+			row, column = cellInfo.rowNumber, cellInfo.columnNumber
+	if row is None or column is None or row < 1 or column < 1:
+		try:
+			obj_row = obj.rowNumber
+			obj_column = obj.columnNumber
+		except (AttributeError, NotImplementedError, TypeError):
+			obj_row = obj_column = None
+		if obj_row and obj_column:
+			row, column = int(obj_row), int(obj_column)
+	if row is None or column is None or row < 1 or column < 1:
+		coords = _currentCoords(obj, cellInfo)
+		if coords:
+			parsed = _coordsToRowColumn(coords)
+			if parsed:
+				row, column = parsed
+	if row is None or column is None or row < 1 or column < 1:
+		return None
+	coordsLabel = f"{_columnLabel(column)}{row}"
+	labeled = _currentCoords(obj, cellInfo)
+	if labeled:
+		local = labeled.split(" through ")[0].strip().replace("$", "")
+		parsed = _coordsToRowColumn(local)
+		if parsed == (row, column):
+			coordsLabel = local
+	return row, column, coordsLabel
+
+
+def _cellInfoIsCurrentFocus(
+	cellInfo: EXCEL_CELLINFO,
+	currentRow: int,
+	currentColumn: int,
+) -> bool:
+	if cellInfo.rowNumber == currentRow and cellInfo.columnNumber == currentColumn:
+		return True
+	if cellInfo.rowNumber < 1 or cellInfo.columnNumber < 1:
+		local = _localAddress(cellInfo)
+		if local:
+			parsed = _coordsToRowColumn(local)
+			return parsed == (currentRow, currentColumn)
+	return False
+
+
 def _cellContent(cellInfo: EXCEL_CELLINFO, *, isCurrent: bool) -> str:
 	if not isCurrent and not _isPrimaryMergeCell(cellInfo):
 		return ""
@@ -347,7 +422,7 @@ def _buildScopedWindow(
 		(
 			i
 			for i, cellInfo in enumerate(window)
-			if cellInfo.rowNumber == currentRow and cellInfo.columnNumber == currentColumn
+			if _cellInfoIsCurrentFocus(cellInfo, currentRow, currentColumn)
 		),
 		None,
 	)
@@ -367,10 +442,14 @@ def _getExcelCellContext(obj: NVDAObject) -> tuple[Any, int, int, Any, int] | No
 		return None
 	try:
 		excelCell = obj.excelCellObject
+		row = int(excelCell.row)
+		column = int(excelCell.column)
+		if row < 1 or column < 1:
+			return None
 		return (
 			excelCell,
-			int(excelCell.row),
-			int(excelCell.column),
+			row,
+			column,
 			excelCell.Worksheet,
 			int(_conf()["cellFormulaNeighbors"]),
 		)
@@ -404,7 +483,12 @@ def _fetchScopedRangeCellInfos(
 		return None
 
 	fetched = _fetchCellInfos(obj, rangeAddress, cellCount)
-	if cellInfo and not any(ci.rowNumber == row and ci.columnNumber == column for ci in fetched):
+	if (
+		cellInfo
+		and cellInfo.rowNumber == row
+		and cellInfo.columnNumber == column
+		and not any(ci.rowNumber == row and ci.columnNumber == column for ci in fetched)
+	):
 		fetched.append(cellInfo)
 	byPosition = _indexCellInfosByPosition(fetched)
 	window = _buildScopedWindow(byPosition, scope, row, column, neighbors)
@@ -437,6 +521,72 @@ def _segmentEntry(
 	return content if content else ""
 
 
+def _minimalScopedSegment(
+	obj: NVDAObject,
+	window: list[EXCEL_CELLINFO],
+	currentRow: int,
+	currentColumn: int,
+	currentCoords: str,
+) -> ScopedBrailleSegment:
+	scope = _scope()
+	linePrefix = (
+		f"{scope.prefixLetter}{currentRow} "
+		if scope == FormulaScope.ROW
+		else f"{scope.prefixLetter}{_columnLabel(currentColumn)} "
+	)
+	cellInfo = next(
+		(info for info in window if _cellInfoIsCurrentFocus(info, currentRow, currentColumn)),
+		None,
+	)
+	if cellInfo is None:
+		cellInfo = _emptyCellInfo(currentRow, currentColumn)
+	entry = _segmentEntry(
+		cellInfo,
+		isCurrent=True,
+		currentCoords=currentCoords,
+		obj=obj,
+	)
+	return ScopedBrailleSegment(linePrefix + entry, currentRow, currentColumn, True)
+
+
+def _ensureCurrentSegmentInList(
+	obj: NVDAObject,
+	segments: list[ScopedBrailleSegment],
+	window: list[EXCEL_CELLINFO],
+) -> list[ScopedBrailleSegment]:
+	if any(segment.isCurrent for segment in segments):
+		return segments
+	position = _focusRowColumn(obj, getattr(obj, "excelCellInfo", None))
+	if position is None:
+		return segments
+	currentRow, currentColumn, currentCoords = position
+	for index, segment in enumerate(segments):
+		if segment.row == currentRow and segment.column == currentColumn:
+			fixed = _minimalScopedSegment(obj, window, currentRow, currentColumn, currentCoords)
+			updated = list(segments)
+			if index == 0:
+				updated[0] = fixed
+			else:
+				separator = str(_conf()["cellFormulaSeparator"] or " | ")
+				entry = _segmentEntry(
+					next(
+						(info for info in window if _cellInfoIsCurrentFocus(info, currentRow, currentColumn)),
+						_emptyCellInfo(currentRow, currentColumn),
+					),
+					isCurrent=True,
+					currentCoords=currentCoords,
+					obj=obj,
+				)
+				updated[index] = ScopedBrailleSegment(
+					separator + entry,
+					currentRow,
+					currentColumn,
+					True,
+				)
+			return updated
+	return [_minimalScopedSegment(obj, window, currentRow, currentColumn, currentCoords), *segments]
+
+
 def iterScopedBrailleSegments(
 	obj: NVDAObject,
 	window: list[EXCEL_CELLINFO] | None = None,
@@ -448,13 +598,10 @@ def iterScopedBrailleSegments(
 		window = _getScopedRangeWindow(obj, cellInfo)
 	if not window:
 		return
-	currentCoords = _currentCoords(obj, cellInfo)
-	if not currentCoords:
+	position = _focusRowColumn(obj, cellInfo)
+	if position is None:
 		return
-	context = _getExcelCellContext(obj)
-	if context is None:
-		return
-	_, currentRow, currentColumn, _, _ = context
+	currentRow, currentColumn, currentCoords = position
 
 	separator = str(_conf()["cellFormulaSeparator"] or " | ")
 	scope = _scope()
@@ -465,7 +612,7 @@ def iterScopedBrailleSegments(
 	)
 
 	for index, info in enumerate(window):
-		isCurrent = info.rowNumber == currentRow and info.columnNumber == currentColumn
+		isCurrent = _cellInfoIsCurrentFocus(info, currentRow, currentColumn)
 		entry = _segmentEntry(
 			info,
 			isCurrent=isCurrent,
@@ -666,6 +813,15 @@ def _excelCellBrailleRegionsFromWindow(
 	cellInfo: EXCEL_CELLINFO | None = getattr(focusCell, "excelCellInfo", None)
 	currentCoords = _currentCoords(focusCell, cellInfo)
 	segments = list(iterScopedBrailleSegments(focusCell, window))
+	if not segments:
+		position = _focusRowColumn(focusCell, cellInfo)
+		if position is not None:
+			currentRow, currentColumn, coords = position
+			if not currentCoords:
+				currentCoords = coords
+			segments = [_minimalScopedSegment(focusCell, window, currentRow, currentColumn, coords)]
+	else:
+		segments = _ensureCurrentSegmentInList(focusCell, segments, window)
 	regions: list[ExcelCellBrailleRegion] = []
 	for segment in segments:
 		regions.append(
@@ -691,7 +847,13 @@ def excelCell_getBrailleRegions(
 		if _originalExcelCellGetBrailleRegions is not None:
 			return _originalExcelCellGetBrailleRegions(obj, review=review)
 		raise NotImplementedError
-	for region in _excelCellBrailleRegionsFromWindow(obj, window):
+	regions = _excelCellBrailleRegionsFromWindow(obj, window)
+	if not regions:
+		# NVDA treats an empty custom generator as success; fall back to default regions.
+		if _originalExcelCellGetBrailleRegions is not None:
+			return _originalExcelCellGetBrailleRegions(obj, review=review)
+		raise NotImplementedError
+	for region in regions:
 		yield region
 
 
@@ -787,7 +949,7 @@ def _excel_primary_focus_region(focusRegions: list) -> Any | None:
 	for region in focusRegions:
 		if getattr(region, "isCurrentSegment", False):
 			return region
-	return focusRegions[-1] if focusRegions else None
+	return focusRegions[0] if focusRegions else None
 
 
 def _focus_excel_current_at_display_left(
@@ -857,9 +1019,10 @@ def _build_excel_focus_regions(focus: NVDAObject) -> list:
 	window = _getScopedRangeWindow(focus, getattr(focus, "excelCellInfo", None))
 	if _scope().isRowOrColumn and window:
 		regions = _excelCellBrailleRegionsFromWindow(focus, window)
-		for region in regions:
-			region.update()
-		return regions
+		if regions:
+			for region in regions:
+				region.update()
+			return regions
 	region = braille.NVDAObjectRegion(focus)
 	region.focusToHardLeft = True
 	region.update()
@@ -932,15 +1095,28 @@ def refresh_excel_braille_display() -> None:
 _headerTextGuardsInstalled = False
 _originalGetRowHeaderText: Any = None
 _originalGetColumnHeaderText: Any = None
+_originalFetchAssociatedHeaderCellText: Any = None
 
 
-def _excelCellCoordinatesReady(cell: ExcelCell) -> bool:
-	info = cell.excelCellInfo
-	if info is None:
+def _excelCellCoordinatesReady(cell: NVDAObject) -> bool:
+	try:
+		rowNumber = cell.rowNumber
+		columnNumber = cell.columnNumber
+	except (AttributeError, NotImplementedError, TypeError):
 		return False
-	rowNumber = info.rowNumber
-	columnNumber = info.columnNumber
-	return isinstance(rowNumber, int) and isinstance(columnNumber, int)
+	return (
+		isinstance(rowNumber, int) and isinstance(columnNumber, int) and rowNumber >= 1 and columnNumber >= 1
+	)
+
+
+def _safeFetchAssociatedHeaderCellText(self, cell, columnHeader: bool = False) -> str | None:
+	if not _excelCellCoordinatesReady(cell):
+		return None
+	try:
+		return _originalFetchAssociatedHeaderCellText(self, cell, columnHeader=columnHeader)
+	except (TypeError, ValueError, COMError, AttributeError, NotImplementedError):
+		log.debugWarning("Excel header text lookup failed", exc_info=True)
+		return None
 
 
 def _safeGetRowHeaderText(self: ExcelCell) -> str | None:
@@ -948,7 +1124,7 @@ def _safeGetRowHeaderText(self: ExcelCell) -> str | None:
 		return None
 	try:
 		return _originalGetRowHeaderText(self)
-	except (TypeError, ValueError, COMError):
+	except (TypeError, ValueError, COMError, AttributeError, NotImplementedError):
 		log.debugWarning("Excel row header text lookup failed", exc_info=True)
 		return None
 
@@ -958,18 +1134,20 @@ def _safeGetColumnHeaderText(self: ExcelCell) -> str | None:
 		return None
 	try:
 		return _originalGetColumnHeaderText(self)
-	except (TypeError, ValueError, COMError):
+	except (TypeError, ValueError, COMError, AttributeError, NotImplementedError):
 		log.debugWarning("Excel column header text lookup failed", exc_info=True)
 		return None
 
 
 def install_excel_header_text_guards() -> None:
 	global _headerTextGuardsInstalled, _originalGetRowHeaderText, _originalGetColumnHeaderText
-	from NVDAObjects.window.excel import ExcelCell, ExcelMergedCell
-
-	if ExcelCell._get_rowHeaderText is _safeGetRowHeaderText:
-		_headerTextGuardsInstalled = True
+	global _originalFetchAssociatedHeaderCellText
+	if _headerTextGuardsInstalled:
 		return
+	from NVDAObjects.window.excel import ExcelCell, ExcelMergedCell, ExcelWorksheet
+
+	_originalFetchAssociatedHeaderCellText = ExcelWorksheet.fetchAssociatedHeaderCellText
+	ExcelWorksheet.fetchAssociatedHeaderCellText = _safeFetchAssociatedHeaderCellText
 	_originalGetRowHeaderText = ExcelCell._get_rowHeaderText
 	_originalGetColumnHeaderText = ExcelCell._get_columnHeaderText
 	for cls in (ExcelCell, ExcelMergedCell):
@@ -980,15 +1158,19 @@ def install_excel_header_text_guards() -> None:
 
 def uninstall_excel_header_text_guards() -> None:
 	global _headerTextGuardsInstalled, _originalGetRowHeaderText, _originalGetColumnHeaderText
+	global _originalFetchAssociatedHeaderCellText
 	if not _headerTextGuardsInstalled:
 		return
-	from NVDAObjects.window.excel import ExcelCell, ExcelMergedCell
+	from NVDAObjects.window.excel import ExcelCell, ExcelMergedCell, ExcelWorksheet
 
+	if _originalFetchAssociatedHeaderCellText is not None:
+		ExcelWorksheet.fetchAssociatedHeaderCellText = _originalFetchAssociatedHeaderCellText
 	for cls in (ExcelCell, ExcelMergedCell):
 		if _originalGetRowHeaderText is not None:
 			cls._get_rowHeaderText = _originalGetRowHeaderText
 		if _originalGetColumnHeaderText is not None:
 			cls._get_columnHeaderText = _originalGetColumnHeaderText
+	_originalFetchAssociatedHeaderCellText = None
 	_originalGetRowHeaderText = None
 	_originalGetColumnHeaderText = None
 	_headerTextGuardsInstalled = False
@@ -999,6 +1181,8 @@ class AppModule(_NVDAExcelAppModule):
 
 	def event_gainFocus(self, obj, nextHandler):
 		nextHandler()
+		if isExcelWorksheetCell(obj):
+			clear_scoped_braille_cache(obj)
 		if not _scope().isRowOrColumn:
 			return
 		focus = _excel_focus_object_for_braille()
