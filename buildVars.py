@@ -1,4 +1,5 @@
 # -*- coding: UTF-8 -*-
+import os
 import subprocess
 import time
 
@@ -8,17 +9,60 @@ import time
 from site_scons.site_tools.NVDATool.typings import AddonInfo, BrailleTables, SymbolDictionaries
 from site_scons.site_tools.NVDATool.utils import _
 
+_STABLE_BRANCHES = frozenset({"stable", "master", "main"})
 
-updateChannel = None
+
+def _git_output(*args: str) -> str:
+	try:
+		return subprocess.check_output(["git", *args]).strip().decode()
+	except (FileNotFoundError, subprocess.CalledProcessError):
+		return ""
+
+
+def _update_channel_from_branch(branch: str) -> str | None:
+	branch = branch.strip()
+	if not branch:
+		return None
+	if branch.endswith("/merge"):
+		return "dev"
+	return "stable" if branch in _STABLE_BRANCHES else "dev"
+
+
+def _update_channel_from_github_ref(ref: str) -> str | None:
+	ref = ref.strip()
+	if ref.startswith("refs/tags/"):
+		return None
+	if ref.startswith("refs/heads/"):
+		return _update_channel_from_branch(ref.removeprefix("refs/heads/"))
+	if ref.startswith("refs/pull/"):
+		return "dev"
+	return None
+
+
+def _detect_update_channel() -> str | None:
+	channel = _update_channel_from_branch(_git_output("branch", "--show-current"))
+	if channel is not None:
+		return channel
+	github_ref = os.environ.get("GITHUB_REF", "")
+	channel = _update_channel_from_github_ref(github_ref)
+	if channel is not None:
+		return channel
+	base_ref = os.environ.get("GITHUB_BASE_REF", "").strip()
+	if base_ref:
+		return _update_channel_from_branch(base_ref)
+	ref_name = os.environ.get("GITHUB_REF_NAME", "").strip()
+	if ref_name:
+		return _update_channel_from_branch(ref_name)
+	return None
+
+
+updateChannel = _detect_update_channel()
 hashCommit = None
-outBranchName = subprocess.check_output(["git", "branch", "--show-current"]).strip().decode()
-out = subprocess.check_output(["git", "status", "--porcelain"]).strip().decode()
+out = _git_output("status", "--porcelain")
 if not out.strip():
-	label = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).strip().decode()
+	label = _git_output("rev-parse", "--short", "HEAD")
 	if label and len(label) == 7:
 		hashCommit = label
-if outBranchName.strip():
-	updateChannel = "stable" if outBranchName in ["stable", "master"] else "dev"
 
 # Add-on information variables
 addon_info: AddonInfo = {

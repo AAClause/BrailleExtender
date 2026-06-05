@@ -32,6 +32,26 @@ sectionName = "brailleExtender"
 checkInProgress = False
 
 
+def is_installed_from_addon_store() -> bool:
+	"""True when NVDA installed this add-on from the Add-on Store (cached store metadata exists)."""
+	try:
+		return addonHandler.Addon(_addonDir)._addonStoreData is not None
+	except (AttributeError, AssertionError):
+		return False
+
+
+def notify_use_addon_store_for_updates() -> None:
+	# Translators: Shown when the user tries Braille Extender's own update check
+	# but the add-on was installed from the NVDA Add-on Store.
+	ui.message(
+		_(
+			"{addonName} was installed from the NVDA Add-on Store. "
+			"To check for or install updates, open Manage add-ons from the NVDA menu, "
+			"then open the Add-on Store and update {addonName} from there."
+		).format(addonName=addonInfos["summary"])
+	)
+
+
 def paramsDL():
 	return {
 		"protocoleVersion": "3",
@@ -50,6 +70,11 @@ urlopen = urllib.request.urlopen
 def checkUpdates(sil=False):
 
 	global checkInProgress
+
+	if is_installed_from_addon_store():
+		if not sil:
+			notify_use_addon_store_for_updates()
+		return
 
 	def availableUpdateDialog(version="", msg=""):
 		global checkInProgress
@@ -183,6 +208,8 @@ class UpdateCheck(threading.Thread):
 
 	def run(self):
 		if globalVars.appArgs.secure or config.isAppX or globalVars.appArgs.launcher:
+			return self.stop()
+		if is_installed_from_addon_store():
 			return self.stop()
 		checkingForced = False
 		delayChecking = 86400 if config.conf[sectionName]["updateChannel"] != "stable" else 604800

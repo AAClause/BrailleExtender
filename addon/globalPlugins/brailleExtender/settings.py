@@ -17,6 +17,7 @@ import wx
 from . import addoncfg
 from . import braille_table_chain
 from . import custom_braille_tables
+from . import updatecheck
 from . import utils
 from .common import POST_TABLE_NONE
 from .advancedinput import SettingsDlg as AdvancedInputModeDlg
@@ -77,6 +78,19 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 		if not config.conf["brailleExtender"]["autoCheckUpdate"]:
 			itemToSelect += len(addoncfg.updateChannels.keys())
 		self.updateCheck.SetSelection(itemToSelect)
+		self._updateSettingsManagedByAddonStore = updatecheck.is_installed_from_addon_store()
+		if self._updateSettingsManagedByAddonStore:
+			self.updateCheck.Enable(False)
+			# Translators: Hint in Braille Extender General settings when updates are handled by NVDA.
+			sHelper.addItem(
+				wx.StaticText(
+					self,
+					label=_(
+						"This add-on was installed from the NVDA Add-on Store. "
+						"Updates are managed by NVDA; open Manage add-ons and the Add-on Store to update."
+					),
+				)
+			)
 
 		# Translators: label of a dialog.
 		self.speakScroll = sHelper.addLabeledControl(
@@ -235,15 +249,19 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 		self.brailleDisplay2.SetSelection(self.bds_k.index(driver_name))
 
 	def postInit(self):
-		self.autoCheckUpdate.SetFocus()
+		if getattr(self, "_updateSettingsManagedByAddonStore", False):
+			self.speakScroll.SetFocus()
+		else:
+			self.updateCheck.SetFocus()
 
 	def onSave(self):
-		updateCheckChoice = self.updateCheck.GetSelection()
-		size = len(addoncfg.updateChannels.keys())
-		config.conf["brailleExtender"]["autoCheckUpdate"] = updateCheckChoice < size
-		config.conf["brailleExtender"]["updateChannel"] = list(addoncfg.updateChannels.keys())[
-			updateCheckChoice % size
-		]
+		if not getattr(self, "_updateSettingsManagedByAddonStore", False):
+			updateCheckChoice = self.updateCheck.GetSelection()
+			size = len(addoncfg.updateChannels.keys())
+			config.conf["brailleExtender"]["autoCheckUpdate"] = updateCheckChoice < size
+			config.conf["brailleExtender"]["updateChannel"] = list(addoncfg.updateChannels.keys())[
+				updateCheckChoice % size
+			]
 
 		config.conf["brailleExtender"]["reviewModeTerminal"] = self.reviewModeTerminal.IsChecked()
 		if self.reverseScrollBtns.IsChecked():
