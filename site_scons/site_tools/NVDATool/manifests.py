@@ -6,6 +6,15 @@ from .typings import AddonInfo, BrailleTables, SymbolDictionaries
 from .utils import format_nested_section
 
 
+def _format_manifest_template(manifest_template: str, addon_info: AddonInfo) -> str:
+	info = dict(addon_info)
+	channel = info.pop("addon_updateChannel", None)
+	manifest = manifest_template.format(**info)
+	if channel is not None:
+		manifest = manifest.rstrip() + f"\nupdateChannel = {channel}\n"
+	return manifest
+
+
 def generateManifest(
 	source: str,
 	dest: str,
@@ -16,7 +25,7 @@ def generateManifest(
 	# Prepare the root manifest section
 	with codecs.open(source, "r", "utf-8") as f:
 		manifest_template = f.read()
-	manifest = manifest_template.format(**addon_info)
+	manifest = _format_manifest_template(manifest_template, addon_info)
 	# Add additional manifest sections such as custom braile tables
 	# Custom braille translation tables
 	if brailleTables:
