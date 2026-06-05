@@ -174,7 +174,7 @@ def install() -> None:
 	braille.BrailleBuffer.scrollForward = scrollForward
 	braille.BrailleHandler.message = new_braille_message
 	_installed = True
-	log.debug("BrailleExtender: speech history mode patches installed")
+	log.debug("speech history mode patches installed")
 
 
 def uninstall() -> None:
@@ -194,10 +194,10 @@ def uninstall() -> None:
 		if _orig_braille_message is not None:
 			braille.BrailleHandler.message = _orig_braille_message
 	except Exception:
-		log.warning("BrailleExtender: error restoring speech history patches", exc_info=True)
+		log.warning("error restoring speech history patches", exc_info=True)
 	_orig_speak = _orig_scroll_back = _orig_scroll_forward = _orig_braille_message = None
 	_installed = False
-	log.debug("BrailleExtender: speech history mode patches uninstalled")
+	log.debug("speech history mode patches uninstalled")
 
 
 def is_installed() -> bool:

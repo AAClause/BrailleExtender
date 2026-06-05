@@ -82,6 +82,7 @@ These match the tabs in **Braille Extender settings**:
 | **Auto scroll** | Delays and behavior for automatic braille scrolling. |
 | **Speech History Mode** | History length, numbering, optional speech while browsing history. |
 | **Document formatting** | How formatting (bold, links, alignment, …) appears in braille, on top of NVDA’s document formatting (see [Detailed topics](#document-formatting)). |
+| **Excel** | Show cell values and formulas in braille; optional row or column overview with routing (see [Excel](#excel)). |
 | **Object Presentation** | Order of name, state, value, and other fields on the focus line; highlight selection with dots 7/8; progress bar messages on the display. |
 | **Braille tables** | Preferred input/output table lists, optional automatic tables on NVDA 2025.1+, shortcut input table, second translation pass, tabs as spaces, **Manage custom braille tables…** (NVDA 2024.3+). |
 | **Undefined character representation** | How characters missing from the table appear (dots, numbers, descriptions, HUC, …). |
@@ -207,7 +208,6 @@ Braille Extender does **not** replace NVDA’s **Document formatting** dialog. T
 - **Plain text mode** — disable all text formatting from this layer.
 - **Process formatting line per line** — build braille one line at a time.
 - **Report rows** — one combo per category (font attributes, emphasis, alignment, colors, links, headings, lists, tables, cell coordinates, spelling/grammar, and others listed on the tab).
-- **Cell formula (Excel only for now)** — when enabled, move a cell’s formula into the description field for braille when applicable.
 - **Level of items in a nested list** — show list nesting level in braille.
 - **Methods…** — per-attribute display (nothing, hand over to the table, dots 7/8, tags, line padding for alignments, etc.).
 - **Tags…** — start/end tag strings used by tag-style methods.
@@ -238,8 +238,6 @@ You can reorder these fields (labels match the dialog):
 
 - **Description**, **keyboard shortcut**, and **position** only appear if the matching options are enabled in NVDA **Settings → Object presentation**.
 - **Cell coordinates** also follow **Braille Extender → Document formatting → Cell coordinates**.
-
-**Excel:** with **Document formatting → Cell formula (Excel only for now)** enabled, a cell’s formula may appear in the description area instead of crowding the state line.
 
 Row and column headers from the application may still be added after the main summary when available.
 
@@ -274,6 +272,93 @@ The three choices (**Follow NVDA document formatting**, **enabled**, **disabled*
 | **Follow NVDA document formatting** | Follows NVDA **Report background progress bars**, or shows bars in the window you are working in |
 | **enabled** | Progress bars in background and foreground windows |
 | **disabled** | Only progress bars in the **foreground** window |
+
+### Excel
+
+Open **Braille Extender settings → Excel** to control how **Microsoft Excel** worksheet cells appear in braille. These options are for the **desktop Excel** program when NVDA can read cells on the sheet the same way it does when you move around with the arrow keys. They do **not** apply to other spreadsheet programs (for example LibreOffice Calc or sheets in a web browser).
+
+If you previously used **Document formatting → Cell formula**, that option has moved here. When you update the add-on, your previous on/off choice is copied into **Excel → Report cell formulas in braille** automatically.
+
+#### Report cell formulas in braille
+
+When this box is **checked** (default), the add-on can show **formulas** on the braille display, not only the value you see in the cell. When it is **unchecked**, Excel cells behave like standard NVDA braille with no formula line from this add-on.
+
+Without the add-on, NVDA often shows a short **frml** hint when a cell has a formula. With **Focused cell only** (below), you still get the normal cell line (value, coordinates, and so on), and the **full formula** is added after that—so you read the formula itself instead of only **frml**.
+
+#### Braille view
+
+This setting controls **how much of the sheet** appears on the braille display at once:
+
+| Choice | What you see |
+|--------|----------------|
+| **Focused cell only** (default) | The cell you are in, as usual, plus its formula when the cell has one. Same layout as normal NVDA braille for that cell. |
+| **Row range on one line** | A **portion of the row** around your cell on one braille line—not the full worksheet row. How many cells each side is set under **Cells on each side of focus** (default **9**). The line may be shorter: only from the first to the last **non-empty** cell in that window. |
+| **Column range on one line** | The same for the **column** around your cell (again a limited range, not the whole column). |
+
+Row and column range views are meant for skimming **nearby cells** without moving focus cell by cell.
+
+You can also change **Braille view** from the keyboard while Excel is running: in **NVDA → Preferences → Input gestures**, assign **Cycle Excel braille view (focused cell, row range, or column range on one line)** (listed under **Braille Extender**). There is no default shortcut; each press moves through **Focused cell only**, **Row range on one line**, then **Column range on one line**, and back to the start. The gesture only works when **Report cell formulas in braille** is enabled.
+
+In **Focused cell only** view, braille panning behaves like normal NVDA (your place on the line is kept when you move between cells). In **Row range on one line** or **Column range on one line** view, the **focused cell** is kept at the **left** of the braille display when you move to another cell, so the overview line stays aligned.
+
+#### Formulas on row or column line
+
+This list applies only when **Braille view** is **Row range on one line** or **Column range on one line**:
+
+| Choice | Meaning |
+|--------|---------|
+| **Focused cell only** (default) | Neighboring cells show their **values** only; the **focused** cell can still show its formula in its part of the line. |
+| **Every cell on the line** | Values **and** formulas for every cell shown on that line. |
+| **Values only (no formulas)** | Every cell on the line shows only its value; formulas are hidden on that overview. |
+
+#### Cells on each side of focus
+
+When **Braille view** is **Row range on one line** or **Column range on one line**, this number is the maximum cells **to the left and right** of your cell (on a row) or **above and below** (in a column) that can appear on the line. Default is **9** (up to **19** positions: 9 + your cell + 9). You can set **0** to **50**.
+
+The line is usually **shorter** than that maximum: it runs from the first to the last **non-empty** cell in the window. Empty cells **between** two cells that have content still appear as blank gaps on the line.
+
+#### Separator between cells on the line
+
+Text placed **between** each cell on a row or column line. Default is a space, vertical bar, space: ` | `. You can change it (for example to ` - ` or `, `) to suit your reading style.
+
+#### Row and column line prefixes
+
+When **Braille view** is **Row range on one line** or **Column range on one line**, a short **prefix** is shown at the **start** of the braille line, **before** the current cell address. NVDA adds **one space** after the prefix automatically—do **not** put a trailing space in the setting.
+
+| Field | Default (English) | Role |
+|-------|-------------------|------|
+| **Row line prefix** | `row` | Row-range lines (example: `row A2: Hello | …`) |
+| **Column line prefix** | `col` | Column-range lines (example: `col A2: Hello | …`) |
+
+Leave a field **empty** to use the **translated** default for your NVDA language. Type your own short label (for example `R` or `Ln`) if you prefer something different on the display.
+
+#### How a row or column line looks
+
+Examples (default separator and prefixes):
+
+- Row **2**, you are in **A2** with value `Hello`, empty **B2–F2**, value `99` in **G2**:  
+  `row A2: Hello |  |  |  |  |  | 99`
+- The prefix (**`row`** or **`col`** by default, or your custom text) shows whether the line is a row range or a column range; the **current cell address** (`A2:`) comes immediately after that prefix and a single space.
+- Only the **current** cell uses its address in the line (for example `A2: Hello`). Other cells show only their value (or nothing if empty).
+- **Empty** cells between two cells with content appear as separator with nothing between (for example ` |  | `).
+- **Row and column headers** you have set up in the workbook (the extra labels NVDA can announce for the current cell) are shown after the **current** cell’s part of the line, not after every neighbor.
+
+#### Routing keys on a row or column line
+
+When **Braille view** is **Row range on one line** or **Column range on one line**, each part of the line is tied to **one cell**:
+
+- Press a **routing key** on the **current** cell’s value (for example under `Hello` in `A2: Hello`) to **edit** that cell, like routing on a normal Excel cell in NVDA.
+- Press a routing key on a **neighbor’s** value (or on an empty gap for an empty cell) to **move** to that cell.
+
+So you can jump along the row or column from the braille display without arrowing through every cell.
+
+#### Merged cells
+
+If several columns or rows are **merged** into one cell:
+
+- The **value** is shown **once** at the start of the merged area on the line (not repeated in every column or row of the merge).
+- Other positions covered by the merge appear as **empty** slots on the line, but routing there still takes you to that **merged** cell.
+- The **current** cell shows the full merged address when NVDA reports it that way (for example `B2 through D2`), and you still see its value or formula when you are anywhere in that merge.
 
 ### Undefined character representation
 

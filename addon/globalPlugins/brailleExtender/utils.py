@@ -383,6 +383,14 @@ def uncapitalize(text: str) -> str:
 def refresh_braille_for_current_focus() -> None:
 	"""Re-run braille focus handling for the document or foreground object (after display or config changes)."""
 	focus_object = api.getFocusObject()
+	if hasattr(focus_object, "excelCellInfo") or hasattr(focus_object, "excelCellObject"):
+		try:
+			from appModules.brailleExtenderExcel import refresh_excel_braille_display
+
+			refresh_excel_braille_display()
+			return
+		except Exception:
+			log.debugWarning("Excel braille refresh failed; using default refresh", exc_info=True)
 	tree_interceptor = focus_object.treeInterceptor
 	if tree_interceptor is not None:
 		updated_interceptor = treeInterceptorHandler.update(focus_object)

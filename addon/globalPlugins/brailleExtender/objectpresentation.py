@@ -14,11 +14,13 @@ import controlTypes
 import queueHandler
 import ui
 from logHandler import log
+from NVDAHelper.localLib import EXCEL_CELLINFO
 from NVDAObjects.behaviors import ProgressBar
 
 from . import addoncfg
 from .common import N_, CHOICE_liblouis, CHOICE_none, ADDON_ORDER_PROPERTIES, IS_CURRENT_NO
 from .documentformatting import CHOICES_LABELS, get_report, LABELS_STATES
+from appModules.brailleExtenderExcel import ExcelBrailleResult, getExcelFormulaDescription
 from .utils import get_output_reason, get_control_type
 
 addonHandler.initTranslation()
@@ -95,42 +97,61 @@ def update_NVDAObjectRegion(self):
 	placeholderValue = obj.placeholder
 	if placeholderValue and not obj._isTextEmpty:
 		placeholderValue = None
-	cellInfo = None
-	if hasattr(obj, "excelCellInfo"):
-		cellInfo = obj.excelCellInfo
+	isExcelCell = hasattr(obj, "excelCellInfo")
+	cellInfo: EXCEL_CELLINFO | None = obj.excelCellInfo if isExcelCell else None
+	excelBraille: ExcelBrailleResult = getExcelFormulaDescription(
+		obj,
+		cellInfo,
+		obj.states,
+		get_control_type("STATE_HASFORMULA"),
+	)
+	if isExcelCell:
+		cellValue = None
+	elif excelBraille.suppress_name:
+		cellValue = None
+	else:
+		cellValue = obj.value if not braille.NVDAObjectHasUsefulText(obj) else None
 	text = getPropertiesBraille(
-		name=obj.name,
+		name=None if excelBraille.suppress_name else obj.name,
 		role=role,
 		roleText=obj.roleTextBraille,
 		current=obj.isCurrent,
 		placeholder=placeholderValue,
-		value=obj.value if not braille.NVDAObjectHasUsefulText(obj) else None,
+		value=cellValue,
 		states=obj.states,
-		description=obj.description if presConfig["reportObjectDescriptions"] else None,
+		description=(
+			excelBraille.description
+			if excelBraille.description
+			else (obj.description if presConfig["reportObjectDescriptions"] else None)
+		),
 		keyboardShortcut=obj.keyboardShortcut if presConfig["reportKeyboardShortcuts"] else None,
 		positionInfo=obj.positionInfo if presConfig["reportObjectPositionInformation"] else None,
-		cellCoordsText=obj.cellCoordsText if get_report("tableCellCoords") else None,
-		cellInfo=cellInfo,
+		cellCoordsText=None
+		if excelBraille.suppress_coords
+		else (obj.cellCoordsText if get_report("tableCellCoords") else None),
+		formulaDescriptionSet=bool(excelBraille.description),
+		suppressCellName=excelBraille.suppress_name,
 	)
-	try:
-		if getattr(obj, "columnHeaderText"):
-			text += "⣀" + obj.columnHeaderText
-	except NotImplementedError:
-		pass
-	try:
-		if getattr(obj, "rowHeaderText"):
-			text += "⡀" + obj.rowHeaderText
-	except NotImplementedError:
-		pass
-	if not getattr(obj, "cellCoordsText"):
+	if isExcelCell and cellInfo:
+		try:
+			if getattr(obj, "columnHeaderText"):
+				text += "⣀" + obj.columnHeaderText
+		except (NotImplementedError, TypeError):
+			pass
+		try:
+			if getattr(obj, "rowHeaderText"):
+				text += "⡀" + obj.rowHeaderText
+		except (NotImplementedError, TypeError):
+			pass
+	if not excelBraille.suppress_coords and not getattr(obj, "cellCoordsText", None):
 		coordinates = ""
 		try:
-			if getattr(obj, "rowNumber"):
+			if getattr(obj, "rowNumber", None):
 				coordinates += N_("r{rowNumber}").format(rowNumber=obj.rowNumber)
 		except NotImplementedError:
 			pass
 		try:
-			if getattr(obj, "columnNumber"):
+			if getattr(obj, "columnNumber", None):
 				coordinates += N_("c{columnNumber}").format(columnNumber=obj.columnNumber)
 		except NotImplementedError:
 			pass
@@ -177,7 +198,10 @@ def getPropertiesBraille(**propertyValues) -> str:
 	negativeStateLabels = braille.negativeStateLabels
 	TEXT_SEPARATOR = braille.TEXT_SEPARATOR
 	roleLabels = braille.roleLabels
+	suppressName = propertyValues.get("suppressCellName")
 	name = propertyValues.get("name")
+	if suppressName:
+		name = None
 	if name:
 		properties["name"] = name
 	description = propertyValues.get("description")
@@ -188,7 +212,6 @@ def getPropertiesBraille(**propertyValues) -> str:
 	positionInfo = propertyValues.get("positionInfo")
 	level = positionInfo.get("level") if positionInfo else None
 	cellCoordsText = propertyValues.get("cellCoordsText")
-	cellInfo = propertyValues.get("cellInfo")
 	rowNumber = propertyValues.get("rowNumber")
 	columnNumber = propertyValues.get("columnNumber")
 	# When fetching row and column span
@@ -207,18 +230,10 @@ def getPropertiesBraille(**propertyValues) -> str:
 			states = states.copy()
 			states.discard(get_control_type("STATE_VISITED"))
 			roleText = N_("vlnk")
-		elif (
-			not description
-			and config.conf["brailleExtender"]["documentFormatting"]["cellFormula"]
-			and states
-			and get_control_type("STATE_HASFORMULA") in states
-			and cellInfo
-			and hasattr(cellInfo, "formula")
-			and cellInfo.formula
-		):
-			states = states.copy()
-			states.discard(get_control_type("STATE_HASFORMULA"))
-			description = cellInfo.formula
+		elif propertyValues.get("formulaDescriptionSet"):
+			if states:
+				states = states.copy()
+				states.discard(get_control_type("STATE_HASFORMULA"))
 		elif (
 			name or cellCoordsText or rowNumber or columnNumber
 		) and role in controlTypes.silentRolesOnFocus:
@@ -231,7 +246,12 @@ def getPropertiesBraille(**propertyValues) -> str:
 		roleText += roleTextPost
 	if roleText:
 		properties["roleText"] = roleText
-	value = propertyValues.get("value") if role not in controlTypes.silentValuesForRoles else None
+	if suppressName:
+		value = None
+	elif role not in controlTypes.silentValuesForRoles:
+		value = propertyValues.get("value")
+	else:
+		value = None
 	if value:
 		properties["value"] = value
 	if states:
