@@ -173,6 +173,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		)
 		if (
 			not globalVars.appArgs.secure
+			and not updatecheck.is_installed_from_addon_store()
 			and config.conf["brailleExtender"]["autoCheckUpdate"]
 			and (
 				checkingForced
