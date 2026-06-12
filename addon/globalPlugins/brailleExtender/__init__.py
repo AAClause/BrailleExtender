@@ -197,7 +197,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		isVirtualBuff = obj is not None and isinstance(obj.treeInterceptor, virtualBuffers.VirtualBuffer)
 		rotor.apply_focus_context(isVirtualBuff, self)
 
-		if "tabSize_%s" % addoncfg.curBD not in config.conf["brailleExtender"].copy().keys():
+		if not addoncfg.is_display_profile_initialized(addoncfg.curBD):
 			self.onReload(None, 1)
 		if self.hourDatePlayed:
 			self.script_hourDate(None)
