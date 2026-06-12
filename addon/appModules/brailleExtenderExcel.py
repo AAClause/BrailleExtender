@@ -25,7 +25,6 @@ from logHandler import log
 from scriptHandler import script
 from speech import speakMessage
 import NVDAHelper
-from NVDAHelper.localLib import EXCEL_CELLINFO
 from NVDAObjects.window.excel import convertAddressToLocal
 
 from appModules.excel import AppModule as _NVDAExcelAppModule
@@ -37,6 +36,13 @@ if TYPE_CHECKING:
 	from NVDAObjects.window.excel import ExcelCell
 
 addonHandler.initTranslation()
+
+try:
+	from NVDAHelper.localLib import EXCEL_CELLINFO
+except (ImportError, ModuleNotFoundError):
+	from NVDAObjects.window.excel import ExcelCellInfo as EXCEL_CELLINFO
+
+_nvdaHelperLocalLib = NVDAHelper.localLib
 
 _CELL_INFO_FLAGS = 0x1 | 0x2 | 0x10 | 0x80
 _XL_A1 = 1
@@ -288,7 +294,7 @@ def _fetchCellInfos(obj: NVDAObject, rangeAddress: str, cellCount: int) -> list[
 	except (AttributeError, COMError):
 		return []
 	if (
-		NVDAHelper.localLib.nvdaInProcUtils_excel_getCellInfos(
+		_nvdaHelperLocalLib.nvdaInProcUtils_excel_getCellInfos(
 			handle,
 			obj.windowHandle,
 			BSTR(localAddress),

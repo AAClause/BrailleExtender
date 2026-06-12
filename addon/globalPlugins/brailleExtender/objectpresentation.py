@@ -14,13 +14,12 @@ import controlTypes
 import queueHandler
 import ui
 from logHandler import log
-from NVDAHelper.localLib import EXCEL_CELLINFO
 from NVDAObjects.behaviors import ProgressBar
 
 from . import addoncfg
 from .common import N_, CHOICE_liblouis, CHOICE_none, ADDON_ORDER_PROPERTIES, IS_CURRENT_NO
 from .documentformatting import CHOICES_LABELS, get_report, LABELS_STATES
-from appModules.brailleExtenderExcel import ExcelBrailleResult, getExcelFormulaDescription
+from appModules.brailleExtenderExcel import EXCEL_CELLINFO, ExcelBrailleResult, getExcelFormulaDescription
 from .utils import get_output_reason, get_control_type
 
 addonHandler.initTranslation()
