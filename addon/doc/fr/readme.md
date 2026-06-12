@@ -46,14 +46,10 @@ NVDA ouvre le fichier **`readme.html`** correspondant à votre langue d’interf
 
 ## Démarrage rapide
 
-Ces étapes suffisent pour la plupart des utilisateurs. Les tables braille personnalisées ne sont utiles que si vous voulez vos propres fichiers de table.
-
 1. **Installez** l’extension (fichier `.nvda-addon`, ou l’Add-on Store NVDA lorsqu’elle y est listée).
 2. **Guide de l’utilisateur :** **Menu NVDA → Braille Extender → Guide de l’utilisateur** ouvre ce document dans le navigateur. Utilisez-le en explorant les paramètres et les commandes. Le tableau [Documentation dans NVDA](#documentation-dans-nvda) liste les autres entrées du menu.
 3. **Paramètres :** **Menu NVDA → Braille Extender → Paramètres…** — parcourez les onglets utiles (par ex. **Général**, **Tables braille**, **Mise en forme des documents**).
 4. **Commandes :** **NVDA → Préférences → Touches de commandes → Catégorie : Braille Extender** — assignez les commandes que vous utiliserez. **Menu NVDA → Braille Extender → Gestes pour cet afficheur…** montre ce que définit déjà le profil de votre afficheur.
-
-**Fonctions optionnelles** (seulement si besoin) : tables braille personnalisées (NVDA 2024.3+), dictionnaires de table, lancements rapides, mode de saisie avancée, etc. Elles ne font **pas** partie de la configuration par défaut — voir [Documentation dans NVDA](#documentation-dans-nvda) pour les chemins de menu, ou les sections détaillées ci-dessous.
 
 ---
 

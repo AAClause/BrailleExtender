@@ -44,14 +44,10 @@ After you install the add-on, you can read this same guide from NVDA: use **User
 
 ## Quick start
 
-These steps are enough for most users. You do not need custom braille tables unless you want your own table files.
-
 1. **Install** the add-on (`.nvda-addon` file, or the NVDA Add-on Store when it is listed there).
 2. **User guide:** **NVDA menu → Braille Extender → User guide** opens this document in a browser. Use it while you explore settings and gestures. The [Documentation in NVDA](#documentation-in-nvda) table above lists other menu entries.
 3. **Settings:** **NVDA menu → Braille Extender → Settings…** — review the tabs you care about (for example **General**, **Braille tables**, **Document formatting**).
 4. **Gestures:** **NVDA → Preferences → Input gestures → Category: Braille Extender** — assign the commands you will use. **NVDA menu → Braille Extender → Gestures for this display…** shows what your current braille display profile already defines.
-
-**Optional features** (only when you need them): custom braille tables (NVDA 2024.3+), table dictionaries, quick launches, advanced input mode, and more. They are **not** part of the default setup — see [Documentation in NVDA](#documentation-in-nvda) for menu paths, or the detailed sections below.
 
 ---
 
