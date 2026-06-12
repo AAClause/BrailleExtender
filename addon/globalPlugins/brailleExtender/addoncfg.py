@@ -402,18 +402,33 @@ def loadPreferredTables() -> None:
 	sync_preferred_table_lists()
 
 
-def _migrate_excel_settings_from_document_formatting() -> None:
+# Keys formerly stored under documentFormatting before the dedicated excel section existed.
+_EXCEL_KEYS_FROM_DOCUMENT_FORMATTING = ("cellFormula",)
+
+
+def _move_braille_extender_option(source_section: str, dest_section: str, key: str) -> bool:
+	"""Move one option between brailleExtender subsections (NVDA AggregatedSection-safe).
+
+	``config.conf`` sections are not plain dicts: use subscript access only (no ``setdefault``).
+	Returns True when *key* was copied from *source_section* to *dest_section*.
+	"""
 	be = config.conf["brailleExtender"]
-	df = be.get("documentFormatting")
-	if df is None or "cellFormula" not in df:
-		return
-	excel = be.setdefault("excel", {})
-	if "cellFormula" not in excel:
-		excel["cellFormula"] = df["cellFormula"]
+	source = be.get(source_section)
+	if source is None or key not in source:
+		return False
+	dest = be[dest_section]
+	if key not in dest:
+		dest[key] = source[key]
 	try:
-		del df["cellFormula"]
+		del source[key]
 	except KeyError:
 		pass
+	return True
+
+
+def _migrate_excel_settings_from_document_formatting() -> None:
+	for key in _EXCEL_KEYS_FROM_DOCUMENT_FORMATTING:
+		_move_braille_extender_option("documentFormatting", "excel", key)
 
 
 def loadConf():
@@ -431,7 +446,7 @@ def loadConf():
 		config.conf["brailleExtender"]["profile_%s" % curBD] = "default"
 	if "tabSize_%s" % curBD not in brlextConf.keys():
 		config.conf["brailleExtender"]["tabSize_%s" % curBD] = 2
-	if "leftMarginCells__%s" % curBD not in brlextConf.keys():
+	if "leftMarginCells_%s" % curBD not in brlextConf.keys():
 		config.conf["brailleExtender"]["leftMarginCells_%s" % curBD] = 0
 	if "rightMarginCells_%s" % curBD not in brlextConf.keys():
 		config.conf["brailleExtender"]["rightMarginCells_%s" % curBD] = 0
