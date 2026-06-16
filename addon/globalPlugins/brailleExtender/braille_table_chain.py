@@ -89,7 +89,7 @@ def liblouis_paths_for_table(table_file: str, *, is_input: bool = False) -> list
 		try:
 			primary = resolve_table_path(fallback)
 		except FileNotFoundError:
-			primary = os.path.join(brailleTables.TABLES_DIR, brailleTables.DEFAULT_TABLE)
+			primary = os.path.join(brailleTables.TABLES_DIR, fallback)
 	if not os.path.isfile(patterns):
 		log.error("Liblouis patterns table missing: %s", patterns)
 	return [primary, patterns]

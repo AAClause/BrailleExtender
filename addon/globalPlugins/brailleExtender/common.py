@@ -10,6 +10,7 @@ import re
 
 import addonHandler
 import brailleTables
+import config
 import versionInfo
 import controlTypes
 import globalVars
@@ -72,21 +73,30 @@ NVDA_HAS_LOCAL_LIB_MODULE = nvdaVersionAtLeast(2026, 1)
 # Config value for disabled additional Liblouis output pass (``brailleExtender.postTable``).
 POST_TABLE_NONE = "None"
 
+# NVDA 2024.x has no ``brailleTables.DEFAULT_TABLE`` (added in 2025.1).
+# Values match NVDA 2024.1 configSpec defaults / historical addon fallbacks.
+_LEGACY_DEFAULT_OUTPUT_TABLE = "en-ueb-g1.ctb"
+_LEGACY_DEFAULT_INPUT_TABLE = "en-us-comp8.utb"
+
 
 def default_braille_table_file_for_cur_language(*, is_input: bool) -> str:
 	"""Return a concrete braille table file name for the current NVDA language.
 
 	On NVDA 2025.1 and later this follows NVDA’s automatic table selection.
-	On NVDA 2024.x (no ``TableType`` / ``getDefaultTableForCurLang``) this returns
-	addon-consistent fallbacks and must not touch those APIs.
+	On NVDA 2024.x (no ``TableType`` / ``getDefaultTableForCurLang``) this uses
+	the configured NVDA table when set, otherwise addon-consistent fallbacks.
 	"""
 	if NVDA_HAS_AUTOMATIC_BRAILLE_TABLES:
 		table_type = brailleTables.TableType.INPUT if is_input else brailleTables.TableType.OUTPUT
 		return brailleTables.getDefaultTableForCurLang(table_type)
+	conf_key = "inputTable" if is_input else "translationTable"
+	configured = config.conf["braille"][conf_key]
+	if configured and configured != "auto":
+		return configured
 	if is_input:
 		# Matches historical ``addoncfg.loadGestures`` fallback when ``inputTable == "auto"``.
-		return "en-us-comp8.utb"
-	return brailleTables.DEFAULT_TABLE
+		return _LEGACY_DEFAULT_INPUT_TABLE
+	return getattr(brailleTables, "DEFAULT_TABLE", _LEGACY_DEFAULT_OUTPUT_TABLE)
 
 
 lang = languageHandler.getLanguage().split("_")[-1].lower()
