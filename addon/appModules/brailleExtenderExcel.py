@@ -25,7 +25,18 @@ from logHandler import log
 from scriptHandler import script
 from speech import speakMessage
 import NVDAHelper
-from NVDAObjects.window.excel import convertAddressToLocal
+
+try:
+	from NVDAObjects.window.excel import convertAddressToLocal
+except ImportError:
+	# NVDA 2024.1 and earlier (see nvaccess/nvda commit for Excel locale-aware ranges).
+	_XL_LIST_SEPARATOR = 5  # XlApplicationInternational.LIST_SEPARATOR
+
+	def convertAddressToLocal(application: Any, address: str) -> str:
+		file_and_sheet, cell_range = address.rsplit("!", 1)
+		sep = application.International(_XL_LIST_SEPARATOR)
+		return f"{file_and_sheet}!{cell_range.replace(',', sep)}"
+
 
 from appModules.excel import AppModule as _NVDAExcelAppModule
 
