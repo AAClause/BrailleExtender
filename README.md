@@ -79,6 +79,7 @@ These match the tabs in **Braille Extender settings**:
 | **Speech History Mode** | History length, numbering, optional speech while browsing history. |
 | **Document formatting** | How formatting (bold, links, alignment, …) appears in braille, on top of NVDA’s document formatting (see [Detailed topics](#document-formatting)). |
 | **Excel** | Show cell values and formulas in braille; optional row or column overview with routing (see [Excel](#excel)). |
+| **Virtual documents** | Show a full **table row on one braille line** in browse mode on web pages (see [Virtual documents (web tables)](#virtual-documents-web-tables)). |
 | **Object Presentation** | Order of name, state, value, and other fields on the focus line; highlight selection with dots 7/8; progress bar messages on the display. |
 | **Braille tables** | Preferred input/output table lists, optional automatic tables on NVDA 2025.1+, shortcut input table, second translation pass, tabs as spaces, **Manage custom braille tables…** (NVDA 2024.3+). |
 | **Undefined character representation** | How characters missing from the table appear (dots, numbers, descriptions, HUC, …). |
@@ -356,6 +357,75 @@ If several columns or rows are **merged** into one cell:
 - Other positions covered by the merge appear as **empty** slots on the line, but routing there still takes you to that **merged** cell.
 - The **current** cell shows the full merged address when NVDA reports it that way (for example `B2 through D2`), and you still see its value or formula when you are anywhere in that merge.
 
+### Virtual documents (web tables)
+
+When you read a **web page in browse mode** (the page is loaded so you can move with the arrow keys), and your cursor is **inside a table**, Braille Extender can show **the entire row on one braille line** instead of only the cell you are in. This works like the Excel **row range on one line** idea, but for **tables on the web** (and similar browse-mode documents—not for Excel worksheets; use [Excel](#excel) for those).
+
+Open **Braille Extender settings → Virtual documents**.
+
+#### Display full table row on one braille line
+
+When this box is **checked** (default), each table row is laid out as one horizontal line on the braille display. When it is **unchecked**, tables use normal NVDA braille (one cell at a time).
+
+#### How a row line looks
+
+With the default markers, a line might look like:
+
+`tb(4,10)(| Name | Age | City |)`
+
+- **tb(4,10)** — on the **first row** of the table only: the table has 4 rows and 10 columns. On later rows this part is not repeated.
+- **Start of row line** (default `(| `) — beginning of the row.
+- **Separator between cells** (default ` | `) — between each cell.
+- **End of row line** (default ` |)`) — end of the row.
+- **tb end** — on the **last row** of the table only, after the end marker: shows that the table ends here.
+
+The **cell you are in** is marked with the usual braille cursor. Other cells on the line show their text only (no extra row or column numbers on every cell unless NVDA would normally show them in that cell’s content).
+
+Empty cells still take a place on the line (you see the separator with nothing between). **Row and column headers** from the page, when NVDA provides them, follow the same rules as normal browse mode for the cell that has focus.
+
+#### Custom markers
+
+You can change the three text fields in **Virtual documents** if the defaults do not suit you:
+
+| Setting | Default (English) | Role |
+|---------|-------------------|------|
+| **Separator between cells** | space, vertical bar, space | Between each cell on the line |
+| **Start of row line** | open parenthesis, vertical bar, space | Beginning of the row |
+| **End of row line** | space, vertical bar, close parenthesis | End of the row |
+
+The defaults are written as ` | `, `(| `, and ` |)` on the braille display.
+
+Use short labels you can recognize on a small display. Changes apply as soon as you save settings.
+
+#### Routing keys on a row line
+
+On displays with **routing keys** (buttons above or below braille cells):
+
+**On cell text**
+
+- Press a routing key on a cell’s **content** to **move the cursor** to that character in the page, the same as routing in normal browse mode (including following links or activating buttons when you route to them).
+
+**On separators and row markers**
+
+- Press a routing key on the **separator between two cells** (by default, space, vertical bar, space): NVDA shows a **short flash message** with the **column**, for example **column 3 (row 2)**.
+- Press a routing key on the **start of the row** (by default `(| `) or the **end of the row** (by default ` |)`): NVDA shows a **short flash message** with the **row**, for example **row 2**.
+
+The message appears briefly on the braille display (NVDA may also speak it, depending on your settings). After that, the cursor moves to the **cell next to** the marker you pressed, so you stay oriented in the table.
+
+#### Merged cells
+
+When one cell **covers several columns or rows**:
+
+- Its **text** is shown **once** at the beginning of that cell on the line (not repeated in every column of the merge).
+- Other columns covered by the merge appear as **empty** gaps on the line, but pressing a routing key there still moves you into that **same merged** cell.
+- Flash messages on separators use **ranges** when helpful, for example **columns 1-3 (row 2)** or **rows 2-4**, so you can tell how wide or tall the merge is.
+
+#### When this feature is active
+
+- Your cursor must be **inside a table** on a **browse mode** page (typical web reading with Firefox, Chrome, Edge, and similar).
+- It does **not** replace Excel braille (see [Excel](#excel)).
+- Outside tables, or when **Display full table row on one braille line** is off, braille behaves as usual.
+
 ### Undefined character representation
 
 Characters **not defined** in the active output table (including many **emoji**) use the chosen **method**: **use braille table behavior**, full **1–8** or **1–6** dot cell, **empty**, custom **dot pattern** (for example `6-123456`), **question mark**, custom **sign** (for example `??`), **hex** (table style, **HUC8**, **HUC6**), **decimal**, **octal**, **binary**.
@@ -468,6 +538,8 @@ When **Use custom role labels** is checked, you can edit **role**, **landmark**,
 - **Terminals:** braille can follow the **review cursor** while you edit (PuTTY, PowerShell, cmd, bash, …).
 - **Auto scroll** with timing and blank-line options.
 - **Multiple input/output tables** and **automatic** selection on NVDA 2025.1+.
+- **Excel:** row or column **overview on one braille line** with routing (see [Excel](#excel)).
+- **Web tables in browse mode:** full **table row on one braille line** with separator flash messages (see [Virtual documents (web tables)](#virtual-documents-web-tables)).
 - **Custom braille tables** (add, copy, edit) on NVDA 2024.3+; activate only from the custom-tables dialog (**None** = off).
 - **Dots 7/8**, **tags**, and line padding for structure and attributes (document formatting **Methods**).
 - **Hide/show dots 7 and 8** — command in **Input gestures** (not an Advanced settings checkbox).

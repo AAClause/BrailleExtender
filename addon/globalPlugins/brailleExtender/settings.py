@@ -32,6 +32,7 @@ from .common import (
 from .autoscroll import SettingsDlg as AutoScrollDlg
 from .documentformatting import SettingsDlg as DocumentFormattingDlg
 from .excelSettings import SettingsDlg as ExcelDlg
+from .virtualDocumentSettings import SettingsDlg as VirtualDocumentDlg
 from .objectpresentation import SettingsDlg as ObjectPresentationDlg
 from .onehand import SettingsDlg as OneHandModeDlg
 from .rolelabels import SettingsDlg as RoleLabelsDlg
@@ -1264,6 +1265,7 @@ class AddonSettingsDialog(gui.settingsDialogs.MultiCategorySettingsDialog):
 		SpeechHistorymodeDlg,
 		DocumentFormattingDlg,
 		ExcelDlg,
+		VirtualDocumentDlg,
 		ObjectPresentationDlg,
 		BrailleTablesDlg,
 		UndefinedCharsDlg,

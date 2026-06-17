@@ -1046,6 +1046,11 @@ def _addTextWithFields(
 				self._endsWithField = False
 				continue
 			elif cmd == "controlStart":
+				if getattr(self, "suppressTableRowLayoutMarkers", False) and field.get(
+					"role"
+				) == get_control_type("ROLE_TABLE"):
+					ctrl_fields.append(field)
+					continue
 				if self._skipFieldsNotAtStartOfNode and not field.get("_startOfNode"):
 					text = None
 				else:
@@ -1080,6 +1085,10 @@ def _addTextWithFields(
 			elif cmd == "controlEnd":
 				in_clickable = False
 				field = ctrl_fields.pop()
+				if getattr(self, "suppressTableRowLayoutMarkers", False) and field.get(
+					"role"
+				) == get_control_type("ROLE_TABLE"):
+					continue
 				text = info.getControlFieldBraille(field, ctrl_fields, False, formatConfig)
 				if not text:
 					continue
@@ -1590,6 +1599,7 @@ def apply_patches() -> None:
 	else:
 		log.debug("Applied %d patch groups: %s", len(_appliedPatches), _appliedPatches)
 	_install_excel_braille_helpers()
+	_install_virtual_buffer_table_braille()
 	try:
 		speechhistorymode.install()
 	except Exception:
@@ -1607,6 +1617,15 @@ def _install_excel_braille_helpers() -> None:
 		sync_excel_braille_regions_patch()
 	except Exception:
 		log.warning("could not install Excel braille helpers", exc_info=True)
+
+
+def _install_virtual_buffer_table_braille() -> None:
+	try:
+		from .virtualBufferTableBraille import install_virtual_buffer_table_braille
+
+		install_virtual_buffer_table_braille()
+	except Exception:
+		log.warning("could not install virtual buffer table braille", exc_info=True)
 
 
 def is_patch_applied(name: str) -> bool:
@@ -1643,6 +1662,12 @@ def unload_patches() -> None:
 
 		uninstall_excel_braille_regions()
 		uninstall_excel_header_text_guards()
+	except Exception:
+		pass
+	try:
+		from .virtualBufferTableBraille import uninstall_virtual_buffer_table_braille
+
+		uninstall_virtual_buffer_table_braille()
 	except Exception:
 		pass
 

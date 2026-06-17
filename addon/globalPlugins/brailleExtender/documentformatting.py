@@ -298,6 +298,33 @@ def report_formatting(report):
 	ui.message(_("{}: {}").format(label_report, label_state))
 
 
+def build_text_with_fields_format_config(*, suppress_table_cell_coords: bool = False) -> dict[str, Any]:
+	"""Build the formatConfig dict used by TextInfoRegion._addTextWithFields."""
+	formatConfig_ = config.conf["documentFormatting"].copy()
+	for e in LABELS_REPORTS.keys():
+		normalized_key = normalize_report_key(e)
+		if not normalized_key:
+			continue
+		addon_row = conf["reports"].get(e)
+		if addon_row == CHOICE_enabled and normalized_key == "fontAttributeReporting":
+			try:
+				from config.configFlags import OutputMode
+
+				prev = formatConfig_.get(normalized_key)
+				mask = int(OutputMode.SPEECH) | int(OutputMode.BRAILLE)
+				if isinstance(prev, int):
+					formatConfig_[normalized_key] = prev | mask
+				else:
+					formatConfig_[normalized_key] = mask
+			except Exception:
+				formatConfig_[normalized_key] = True
+		else:
+			formatConfig_[normalized_key] = get_report(e)
+	if suppress_table_cell_coords:
+		formatConfig_["reportTableCellCoords"] = False
+	return formatConfig_
+
+
 def get_method(k):
 	candidates = [k]
 	if ":" in k:
@@ -378,26 +405,10 @@ def decorator(fn, s):
 		return louis_typeform_flags, extra_dots_cell_mask
 
 	def addTextWithFields_edit(self, info, formatConfig, isSelection=False):
-		formatConfig_ = formatConfig.copy()
-		for e in LABELS_REPORTS.keys():
-			normalized_key = normalize_report_key(e)
-			if not normalized_key:
-				continue
-			addon_row = conf["reports"].get(e)
-			if addon_row == CHOICE_enabled and normalized_key == "fontAttributeReporting":
-				try:
-					from config.configFlags import OutputMode
-
-					prev = formatConfig_.get(normalized_key)
-					mask = int(OutputMode.SPEECH) | int(OutputMode.BRAILLE)
-					if isinstance(prev, int):
-						formatConfig_[normalized_key] = prev | mask
-					else:
-						formatConfig_[normalized_key] = mask
-				except Exception:
-					formatConfig_[normalized_key] = True
-			else:
-				formatConfig_[normalized_key] = get_report(e)
+		suppress_table_cell_coords = getattr(self, "suppressTableCellCoords", False)
+		formatConfig_ = build_text_with_fields_format_config(
+			suppress_table_cell_coords=suppress_table_cell_coords,
+		)
 		textInfo_ = info.getTextWithFields(formatConfig_)
 		formatField = textInfos.FormatField()
 		for field in textInfo_:
@@ -821,3 +832,6 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		for i, key in enumerate(LABELS_REPORTS.keys()):
 			val = list(LABELS_STATES.keys())[self.dynamic_options[i].GetSelection()]
 			set_report(key, val)
+		from .virtualBufferTableBraille import schedule_document_formatting_braille_refresh
+
+		schedule_document_formatting_braille_refresh()

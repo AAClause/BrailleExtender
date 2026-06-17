@@ -81,6 +81,7 @@ Correspondance avec les onglets de **Paramètres Braille Extender** :
 | **Mode historique de parole** | Taille de l’historique, numérotation, parole optionnelle en parcourant l’historique. |
 | **Mise en forme des documents** | Apparence en braille du gras, liens, alignement, etc., en complément de la mise en forme NVDA (voir [Mise en forme des documents](#mise-en-forme-des-documents)). |
 | **Excel** | Valeurs et formules des cellules en braille ; aperçu ligne/colonne optionnel avec routage (voir [Excel](#excel)). |
+| **Documents virtuels** | Afficher une **ligne de tableau entière sur une ligne braille** en mode navigation sur les pages web (voir [Documents virtuels (tableaux web)](#documents-virtuels-tableaux-web)). |
 | **Présentation des objets** | Ordre nom, état, valeur, etc. sur la ligne focalisée ; surbrillance de la sélection avec points 7/8 ; barres de progression sur l’afficheur. |
 | **Tables braille** | Listes préférées entrée/sortie, tables automatiques sur NVDA 2025.1+, table d’entrée pour raccourcis, seconde passe de traduction, tabulations en espaces, **Gérer les tables braille personnalisées…** (NVDA 2024.3+). |
 | **Représentation des caractères non définis** | Caractères absents de la table (points, nombres, descriptions, HUC, …). |
@@ -358,6 +359,75 @@ Si plusieurs colonnes ou lignes sont **fusionnées** :
 - Les autres positions de la fusion sont des **emplacements vides** sur la ligne ; le routage y mène quand même à la **cellule fusionnée**.
 - La **cellule courante** montre l’adresse fusionnée complète si NVDA la rapporte ainsi (ex. `B2 through D2`), avec valeur ou formule partout dans la fusion.
 
+### Documents virtuels (tableaux web)
+
+Quand vous lisez une **page web en mode navigation** (la page est chargée et vous vous déplacez avec les flèches), et que le curseur est **dans un tableau**, Braille Extender peut afficher **toute la ligne sur une seule ligne braille** au lieu d’une seule cellule. C’est le même principe que la **plage de ligne sur une ligne** d’Excel, mais pour les **tableaux sur le web** (et documents similaires en mode navigation — pas pour les feuilles Excel ; voir [Excel](#excel)).
+
+Ouvrez **Paramètres Braille Extender → Documents virtuels**.
+
+#### Afficher la ligne de tableau entière sur une ligne braille
+
+Si cette case est **cochée** (défaut), chaque ligne de tableau est disposée horizontalement sur l’afficheur braille. Si elle est **décochée**, les tableaux utilisent le braille NVDA habituel (une cellule à la fois).
+
+#### Aspect d’une ligne de tableau
+
+Avec les marqueurs par défaut, une ligne peut ressembler à :
+
+`tb(4,10)(| Nom | Âge | Ville |)`
+
+- **tb(4,10)** — sur la **première ligne** du tableau seulement : le tableau compte 4 lignes et 10 colonnes. Sur les lignes suivantes, cette partie n’est pas répétée.
+- **Début de ligne de tableau** (défaut `(| `) — début de la ligne.
+- **Séparateur entre cellules** (défaut ` | `) — entre chaque cellule.
+- **Fin de ligne de tableau** (défaut ` |)`) — fin de la ligne.
+- **tb end** — sur la **dernière ligne** du tableau seulement, après le marqueur de fin : indique que le tableau se termine ici.
+
+La **cellule où vous êtes** est marquée par le curseur braille habituel. Les autres cellules de la ligne n’affichent que leur texte (pas de numéros de ligne ou de colonne supplémentaires sur chaque cellule, sauf si NVDA les inclut déjà dans le contenu de la cellule).
+
+Les cellules vides occupent quand même une place sur la ligne (vous voyez le séparateur sans texte entre). Les **en-têtes de ligne ou de colonne** de la page, lorsque NVDA les fournit, suivent les mêmes règles qu’en mode navigation habituel pour la cellule focalisée.
+
+#### Marqueurs personnalisés
+
+Vous pouvez modifier les trois champs de texte dans **Documents virtuels** si les valeurs par défaut ne vous conviennent pas :
+
+| Paramètre | Défaut (anglais) | Rôle |
+|-----------|------------------|------|
+| **Séparateur entre cellules** | espace, barre verticale, espace | Entre chaque cellule sur la ligne |
+| **Début de ligne de tableau** | parenthèse ouvrante, barre verticale, espace | Début de la ligne |
+| **Fin de ligne de tableau** | espace, barre verticale, parenthèse fermante | Fin de la ligne |
+
+Sur l’afficheur, les défauts s’écrivent ` | `, `(| ` et ` |)`.
+
+Utilisez des libellés courts que vous reconnaissez sur un petit afficheur. Les changements s’appliquent dès l’enregistrement des paramètres.
+
+#### Touches de routage sur une ligne de tableau
+
+Sur les afficheurs avec **touches de routage** (boutons au-dessus ou en dessous des cellules braille) :
+
+**Sur le texte d’une cellule**
+
+- Appuyez sur une touche de routage sur le **contenu** d’une cellule pour **déplacer le curseur** à ce caractère dans la page, comme en mode navigation habituel (y compris suivre un lien ou activer un bouton si vous routez dessus).
+
+**Sur les séparateurs et marqueurs de ligne**
+
+- Appuyez sur une touche de routage sur le **séparateur entre deux cellules** (par défaut espace, barre verticale, espace) : NVDA affiche un **court message** avec la **colonne**, par exemple **colonne 3 (ligne 2)**.
+- Appuyez sur une touche de routage sur le **début de la ligne** (par défaut `(| `) ou la **fin de la ligne** (par défaut ` |)`) : NVDA affiche un **court message** avec la **ligne**, par exemple **ligne 2**.
+
+Le message apparaît brièvement sur l’afficheur braille (NVDA peut aussi le dire à voix haute selon vos paramètres). Ensuite, le curseur se place dans la **cellule voisine** du marqueur que vous avez pressé, pour que vous restiez orienté dans le tableau.
+
+#### Cellules fusionnées
+
+Quand une cellule **couvre plusieurs colonnes ou lignes** :
+
+- Son **texte** s’affiche **une fois** au début de cette cellule sur la ligne (pas répété dans chaque colonne de la fusion).
+- Les autres colonnes couvertes par la fusion apparaissent comme des **espaces vides** sur la ligne, mais une touche de routage y mène quand même à la **même cellule fusionnée**.
+- Les messages sur les séparateurs utilisent des **plages** lorsque c’est utile, par exemple **colonnes 1-3 (ligne 2)** ou **lignes 2-4**, pour indiquer l’étendue de la fusion.
+
+#### Quand cette fonction est active
+
+- Le curseur doit être **dans un tableau** sur une page en **mode navigation** (lecture web habituelle avec Firefox, Chrome, Edge, etc.).
+- Elle **ne remplace pas** le braille Excel (voir [Excel](#excel)).
+- Hors tableaux, ou si **Afficher la ligne de tableau entière sur une ligne braille** est désactivé, le braille se comporte comme d’habitude.
+
 ### Représentation des caractères non définis
 
 Les caractères **non définis** dans la table de sortie active (dont beaucoup d’**emoji**) utilisent la **méthode** choisie : **comportement de la table**, cellule **1–8** ou **1–6**, **vide**, **motif de points** personnalisé (ex. `6-123456`), **point d’interrogation**, **signe** personnalisé (ex. `??`), **hex** (style table, **HUC8**, **HUC6**), **décimal**, **octal**, **binaire**.
@@ -470,6 +540,8 @@ Si **Utiliser des libellés de rôles personnalisés** est coché, vous pouvez m
 - **Terminaux :** le braille peut suivre le **curseur de revue** pendant l’édition (PuTTY, PowerShell, cmd, bash, …).
 - **Défilement automatique** avec réglages et options lignes vides.
 - **Plusieurs tables entrée/sortie** et sélection **automatique** sur NVDA 2025.1+.
+- **Excel :** aperçu **ligne ou colonne sur une ligne braille** avec routage (voir [Excel](#excel)).
+- **Tableaux web en mode navigation :** **ligne de tableau entière sur une ligne braille** avec messages sur les séparateurs (voir [Documents virtuels (tableaux web)](#documents-virtuels-tableaux-web)).
 - **Tables braille personnalisées** (ajout, copie, édition) sur NVDA 2024.3+ ; activation uniquement depuis le dialogue des tables personnalisées (**Aucune** = désactivé).
 - **Points 7/8**, **balises** et remplissage de ligne pour structure et attributs (**Méthodes** de mise en forme des documents).
 - **Masquer/afficher les points 7 et 8** — commande dans **Touches de commandes** (pas une case Avancé).
