@@ -84,7 +84,8 @@ def _tableRowCount(
 	return dims[0] if dims is not None else None
 
 
-TableRowRoutingZone = Literal["content", "row", "column"]
+TableRowWindowAnchor = Literal["caret", "rowEnd", "rowStart"]
+TableRowRoutingZone = Literal["content", "column", "row", "tableEnd"]
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,8 @@ class _TableRowCellBrailleLayout:
 		if rawPos >= prefixLen + contentLen:
 			if rawPos < prefixLen + contentLen + len(self.lineEnd):
 				return "row"
+			if self.tableBoundarySuffix:
+				return "tableEnd"
 			return "content"
 		return "content"
 
@@ -144,6 +147,7 @@ def _clearTableRowCoordFlash() -> None:
 def _virtualBufferTableBraille_routeTo(self, windowPos) -> None:
 	"""Show table-row coordinate flashes via ui.message after NVDA's routing dismiss step."""
 	stop_nvda_core_autoscroll(self)
+	_clearHandlerTableRowWindowAnchor(self)
 	_clearTableRowCoordFlash()
 	self.buffer.routeTo(windowPos)
 	pending = getattr(self, _TABLE_ROW_COORD_FLASH_ATTR, None)
@@ -285,6 +289,8 @@ def _tableRowCoordFlashMessage(
 		if colSpan > 1:
 			message = _appendFlashDetail(message, _columnRangeLabel(column, colSpan))
 		return message
+	if zone == "tableEnd":
+		return _tableBoundarySuffix()
 	return None
 
 
@@ -520,6 +526,18 @@ class _TableRowCellData:
 	rawTextTypeforms: tuple[int, ...] = ()
 	brlexTypeformItems: tuple[tuple[int, int], ...] = ()
 	endsWithField: bool = False
+	contentCursor: int | None = None
+
+
+def _cellDataToSnapshot(cellData: _TableRowCellData) -> _CellBrailleSnapshot:
+	return _CellBrailleSnapshot(
+		cellData.text,
+		cellData.rawToContentPos,
+		cellData.rawTextTypeforms,
+		cellData.brlexTypeformItems,
+		cellData.endsWithField,
+		None,
+	)
 
 
 class _CellBrailleTextBuilder(braille.TextInfoRegion):
@@ -556,6 +574,94 @@ def _currentTableCell(virtualBuffer) -> Any | None:
 		return virtualBuffer._getTableCellCoords(virtualBuffer.selection)
 	except LookupError:
 		return None
+
+
+def _isLastTableRowForRegion(region: VirtualBufferTableCellBrailleRegion) -> bool:
+	tableRowCount = _tableRowCount(
+		region._virtualBuffer,
+		region._cellInfo,
+		tableID=region._tableID,
+	)
+	return tableRowCount is not None and region._row == tableRowCount
+
+
+def _lastCellInfoInTableRow(virtualBuffer, tableID: int, row: int) -> textInfos.TextInfo | None:
+	lastCell: textInfos.TextInfo | None = None
+	for info in virtualBuffer._iterTableCells(tableID, row=row):
+		lastCell = info
+	return lastCell
+
+
+def _textInfoAfterTable(
+	virtualBuffer,
+	tableID: int,
+	anchorInfo: textInfos.TextInfo,
+) -> textInfos.TextInfo | None:
+	"""Collapsed TextInfo at the first position after the given table."""
+	dest = anchorInfo.copy()
+	dest.collapse()
+	try:
+		dest.expand(textInfos.UNIT_CHARACTER)
+	except (RuntimeError, NotImplementedError):
+		pass
+	dest.collapse(False)
+	tableIdStr = str(tableID)
+	for _ in range(5000):
+		try:
+			cell = virtualBuffer._getTableCellCoords(dest)
+			if str(cell.tableID) != tableIdStr:
+				dest.collapse()
+				return dest
+		except LookupError:
+			dest.collapse()
+			return dest
+		if not dest.move(textInfos.UNIT_CHARACTER, 1):
+			dest.collapse()
+			return dest
+	return None
+
+
+def _textInfoAfterTableRow(
+	virtualBuffer,
+	tableID: int,
+	row: int,
+) -> textInfos.TextInfo | None:
+	anchor = _lastCellInfoInTableRow(virtualBuffer, tableID, row)
+	if anchor is None:
+		anchor = virtualBuffer.selection
+	return _textInfoAfterTable(virtualBuffer, tableID, anchor)
+
+
+def _leaveVirtualBufferTableForward(
+	virtualBuffer,
+	*,
+	tableID: int,
+	tableRow: int,
+	region: VirtualBufferTableCellBrailleRegion | None = None,
+) -> bool:
+	"""Move the browse-mode caret past the table and restore normal document braille."""
+	dest = _textInfoAfterTableRow(virtualBuffer, tableID, tableRow)
+	if dest is None:
+		return False
+	handler = braille.handler
+	_prepareTableRowBrailleRowTransition(handler, virtualBuffer, windowAnchor="caret")
+	try:
+		virtualBuffer.selection = dest
+	except (AttributeError, NotImplementedError, RuntimeError):
+		try:
+			dest.updateCaret()
+		except NotImplementedError:
+			log.debugWarning("virtual buffer table forward exit failed", exc_info=True)
+			return False
+	readingUnit = region._getReadingUnit() if region is not None else textInfos.UNIT_LINE
+	try:
+		braille._speakOnNavigatingByUnit(dest, readingUnit)
+	except AttributeError:
+		pass
+	if handler is not None and handler.enabled:
+		_restoreNormalVirtualBufferBraille(handler, virtualBuffer)
+		_clearHandlerTableRowWindowAnchor(handler)
+	return True
 
 
 def _navigateVirtualBufferTableRow(virtualBuffer, *, forward: bool) -> bool:
@@ -773,10 +879,17 @@ def _getTableRowCellData(
 			continue
 		if coords.tableID != tableID or coords.row != row:
 			continue
+		isCurrent = _isCurrentTableCell(currentCell, coords)
 		if withText:
-			snapshot, _ = _buildCellBrailleWithCursor(info)
+			snapshot, contentCursor = _buildCellBrailleWithCursor(
+				info,
+				caretInfo if isCurrent else None,
+				virtualBuffer=virtualBuffer if isCurrent else None,
+				currentCell=currentCell if isCurrent else None,
+			)
 		else:
 			snapshot = _CellBrailleSnapshot("", ())
+			contentCursor = None
 		cells.append(
 			_TableRowCellData(
 				column=coords.col,
@@ -785,12 +898,13 @@ def _getTableRowCellData(
 				cellObj=info.NVDAObjectAtStart,
 				text=snapshot.text,
 				rawToContentPos=snapshot.rawToContentPos,
-				isCurrent=_isCurrentTableCell(currentCell, coords),
+				isCurrent=isCurrent,
 				rowSpan=coords.rowSpan,
 				colSpan=coords.colSpan,
 				rawTextTypeforms=snapshot.rawTextTypeforms,
 				brlexTypeformItems=snapshot.brlexTypeformItems,
 				endsWithField=snapshot.endsWithField,
+				contentCursor=contentCursor,
 			)
 		)
 
@@ -862,6 +976,7 @@ class VirtualBufferTableCellBrailleRegion(braille.CursorManagerRegion):
 		self._column = column
 		self._rowSpan = max(1, rowSpan or 1)
 		self._colSpan = max(1, colSpan or 1)
+		self._pendingContentCursor: int | None = None
 
 	def _isMultiline(self) -> bool:
 		return False
@@ -916,12 +1031,15 @@ class VirtualBufferTableCellBrailleRegion(braille.CursorManagerRegion):
 			)
 			_applyCellSnapshotToRegion(self, snapshot)
 		elif self.isCurrentCell:
-			_, contentCursor = _buildCellBrailleWithCursor(
-				self._cellInfo,
-				caret,
-				virtualBuffer=self._virtualBuffer,
-				currentCell=currentCell,
-			)
+			contentCursor = self._pendingContentCursor
+			self._pendingContentCursor = None
+			if contentCursor is None:
+				_, contentCursor = _buildCellBrailleWithCursor(
+					self._cellInfo,
+					caret,
+					virtualBuffer=self._virtualBuffer,
+					currentCell=currentCell,
+				)
 		self._syncReadingInfo()
 		self._prepareBrailleTranslationState()
 		prefixLen = len(self._layout.displayPrefix)
@@ -977,6 +1095,14 @@ class VirtualBufferTableCellBrailleRegion(braille.CursorManagerRegion):
 			)
 			if message:
 				_queueTableRowCoordFlash(message)
+			if zone == "tableEnd" or (zone == "row" and self._layout.tableBoundarySuffix):
+				if _leaveVirtualBufferTableForward(
+					self._virtualBuffer,
+					tableID=self._tableID,
+					tableRow=self._row,
+					region=self,
+				):
+					return
 			self._routeToCell()
 			handler = braille.handler
 			if handler is not None and handler.enabled:
@@ -995,10 +1121,10 @@ class VirtualBufferTableCellBrailleRegion(braille.CursorManagerRegion):
 		if self._readingInfo.isCollapsed:
 			self._readingInfo.expand(unit)
 
-	def _refreshAfterLineNav(self) -> None:
+	def _refreshAfterLineNav(self, *, windowAnchor: TableRowWindowAnchor = "caret") -> None:
 		handler = braille.handler
 		if handler is not None and handler.enabled:
-			_updateExistingTableRowRegions(handler, self._virtualBuffer)
+			_updateExistingTableRowRegions(handler, self._virtualBuffer, windowAnchor=windowAnchor)
 
 	def _documentLineNav(self, *, forward: bool, start: bool = False) -> None:
 		"""Document-level line navigation (NVDA ``TextInfoRegion``) from the caret."""
@@ -1013,34 +1139,40 @@ class VirtualBufferTableCellBrailleRegion(braille.CursorManagerRegion):
 			braille.TextInfoRegion.previousLine(helper, start)
 
 	def _lineNavNextFromEnd(self) -> None:
-		"""Leave the current row when braille scroll reaches the row end."""
-		if _navigateVirtualBufferTableRow(self._virtualBuffer, forward=True):
-			try:
-				braille._speakOnNavigatingByUnit(
-					self._virtualBuffer.selection,
-					self._getReadingUnit(),
-				)
-			except AttributeError:
-				pass
-			self._refreshAfterLineNav()
+		"""Leave the current row when braille scroll reaches the row end (NVDA ``nextLine``)."""
+		if _attemptTableRowBrailleRowTransition(
+			self._virtualBuffer,
+			self,
+			forward=True,
+			windowAnchor="rowStart",
+		):
 			return
+		if _isLastTableRowForRegion(self) or self._layout.tableBoundarySuffix:
+			if _leaveVirtualBufferTableForward(
+				self._virtualBuffer,
+				tableID=self._tableID,
+				tableRow=self._row,
+				region=self,
+			):
+				return
 		self._documentLineNav(forward=True)
 		self._refreshAfterLineNav()
 
 	def _lineNavPreviousFromStart(self, *, start: bool = False) -> None:
-		"""Leave the current row when braille scroll reaches the row start."""
-		if _navigateVirtualBufferTableRow(self._virtualBuffer, forward=False):
-			try:
-				braille._speakOnNavigatingByUnit(
-					self._virtualBuffer.selection,
-					self._getReadingUnit(),
-				)
-			except AttributeError:
-				pass
-			self._refreshAfterLineNav()
+		"""Leave the current row when braille scroll reaches the row start (NVDA ``previousLine``)."""
+		anchor: TableRowWindowAnchor = "rowEnd" if not start else "caret"
+		if _attemptTableRowBrailleRowTransition(
+			self._virtualBuffer,
+			self,
+			forward=False,
+			windowAnchor=anchor,
+		):
 			return
+		handler = braille.handler
+		if handler is not None:
+			_clearHandlerTableRowWindowAnchor(handler)
 		self._documentLineNav(forward=False, start=start)
-		self._refreshAfterLineNav()
+		self._refreshAfterLineNav(windowAnchor=anchor)
 
 	def nextLine(self) -> None:
 		if self._isRowEndCell:
@@ -1131,6 +1263,8 @@ def _tableRowBrailleRegionsFromCells(
 			layout=layout,
 			isRowEndCell=index == lastIndex,
 		)
+		if cellData.isCurrent:
+			cellRegion._pendingContentCursor = cellData.contentCursor
 		regions.append(cellRegion)
 		if index == 0:
 			firstCellRegion = cellRegion
@@ -1186,18 +1320,160 @@ def _getFocusContextRegionsForVirtualBufferTable(obj, oldFocusRegions=None):
 	return _originalGetFocusContextRegions(obj, oldFocusRegions=oldFocusRegions)
 
 
-def _clearStaleVirtualBufferTextInfoPendingUpdates(handler: braille.BrailleHandler, virtualBuffer) -> None:
-	"""Drop queued TextInfoRegion caret scrolls for a buffer we replaced with table-row regions."""
+_PENDING_TABLE_ROW_WINDOW_ANCHOR_ATTR = "_bePendingTableRowWindowAnchor"
+_TABLE_ROW_BRAILLE_TRANSITION_ATTR = "_beTableRowBrailleTransition"
+
+
+def _setHandlerTableRowWindowAnchor(
+	handler: braille.BrailleHandler,
+	anchor: TableRowWindowAnchor,
+) -> None:
+	setattr(handler, _PENDING_TABLE_ROW_WINDOW_ANCHOR_ATTR, anchor)
+
+
+def _getHandlerTableRowWindowAnchor(
+	handler: braille.BrailleHandler | None,
+	explicit: TableRowWindowAnchor = "caret",
+) -> TableRowWindowAnchor:
+	if handler is None:
+		return explicit
+	pending = getattr(handler, _PENDING_TABLE_ROW_WINDOW_ANCHOR_ATTR, None)
+	return pending if pending is not None else explicit
+
+
+def _clearHandlerTableRowWindowAnchor(handler: braille.BrailleHandler | None) -> None:
+	if handler is None:
+		return
+	try:
+		delattr(handler, _PENDING_TABLE_ROW_WINDOW_ANCHOR_ATTR)
+	except AttributeError:
+		pass
+
+
+def _beginTableRowBrailleTransition(handler: braille.BrailleHandler | None) -> None:
+	"""Suppress redundant caret-move refreshes while a row transition is in flight."""
+	if handler is not None:
+		setattr(handler, _TABLE_ROW_BRAILLE_TRANSITION_ATTR, True)
+
+
+def _endTableRowBrailleTransition(handler: braille.BrailleHandler | None) -> None:
+	if handler is None:
+		return
+	try:
+		delattr(handler, _TABLE_ROW_BRAILLE_TRANSITION_ATTR)
+	except AttributeError:
+		pass
+
+
+def _isTableRowBrailleTransition(handler: braille.BrailleHandler | None) -> bool:
+	return handler is not None and getattr(handler, _TABLE_ROW_BRAILLE_TRANSITION_ATTR, False)
+
+
+def _invalidateSavedBrailleWindow(mainBuffer: braille.BrailleBuffer) -> None:
+	"""Drop a saved window position so ``restoreWindow`` cannot remap a prior row."""
+	try:
+		del mainBuffer._savedWindow
+	except AttributeError:
+		pass
+
+
+def _clearStaleVirtualBufferPendingUpdates(handler: braille.BrailleHandler, virtualBuffer) -> None:
+	"""Drop queued region updates for a virtual buffer we replaced with table-row regions."""
 	stale = {
 		region
 		for region in handler._regionsPendingUpdate
-		if isinstance(region, braille.TextInfoRegion) and region.obj is virtualBuffer
+		if (
+			isinstance(region, VirtualBufferTableCellBrailleRegion) and region._virtualBuffer is virtualBuffer
+		)
+		or (isinstance(region, braille.TextInfoRegion) and region.obj is virtualBuffer)
 	}
 	if not stale:
 		return
 	handler._regionsPendingUpdate -= stale
 	for region in stale:
 		region.pendingCaretUpdate = False
+
+
+def _tableRowBrailleAtRowStart(mainBuffer: braille.BrailleBuffer) -> bool:
+	"""True when the braille window cannot scroll further left within the current row."""
+	return mainBuffer.windowStartPos == 0
+
+
+def _tableRowBrailleAtRowEnd(
+	handler: braille.BrailleHandler,
+	mainBuffer: braille.BrailleBuffer,
+) -> bool:
+	"""True when the braille window cannot scroll further right within the current row."""
+	bufferLen = len(mainBuffer.brailleCells)
+	if bufferLen <= 0:
+		return False
+	if bufferLen <= handler.displaySize:
+		return True
+	return mainBuffer.windowEndPos >= bufferLen
+
+
+def _rowEndCellRegionForScrollBack(
+	mainBuffer: braille.BrailleBuffer,
+) -> VirtualBufferTableCellBrailleRegion | None:
+	if not mainBuffer.regions:
+		return None
+	lastRegion = mainBuffer.regions[-1]
+	if not isinstance(lastRegion, VirtualBufferTableCellBrailleRegion) or not lastRegion._isRowEndCell:
+		return None
+	return lastRegion._rowBackwardCell or lastRegion
+
+
+def _prepareTableRowBrailleRowTransition(
+	handler: braille.BrailleHandler | None,
+	virtualBuffer,
+	*,
+	windowAnchor: TableRowWindowAnchor,
+) -> None:
+	"""Invalidate saved window state before a table-row transition (NVDA ``saveWindow`` / ``restoreWindow``)."""
+	if handler is None:
+		return
+	if windowAnchor == "rowEnd":
+		_setHandlerTableRowWindowAnchor(handler, "rowEnd")
+	elif windowAnchor == "rowStart":
+		_setHandlerTableRowWindowAnchor(handler, "rowStart")
+	else:
+		_clearHandlerTableRowWindowAnchor(handler)
+	_invalidateSavedBrailleWindow(handler.mainBuffer)
+	_clearStaleVirtualBufferPendingUpdates(handler, virtualBuffer)
+
+
+def _attemptTableRowBrailleRowTransition(
+	virtualBuffer,
+	region: VirtualBufferTableCellBrailleRegion,
+	*,
+	forward: bool,
+	windowAnchor: TableRowWindowAnchor,
+) -> bool:
+	"""Move to the adjacent table row and refresh braille.
+
+	Mirrors NVDA ``BrailleBuffer.scrollBack`` / ``scrollForward``: when the window
+	cannot pan further, the last region's ``previousLine`` / ``nextLine`` leaves the row.
+	Forward transitions anchor at the caret; backward transitions anchor at row end
+	(``windowEndPos``, like NVDA ``previousLine(start=False)``).
+	"""
+	handler = braille.handler
+	_beginTableRowBrailleTransition(handler)
+	try:
+		if not _navigateVirtualBufferTableRow(virtualBuffer, forward=forward):
+			return False
+		_prepareTableRowBrailleRowTransition(handler, virtualBuffer, windowAnchor=windowAnchor)
+		try:
+			braille._speakOnNavigatingByUnit(
+				virtualBuffer.selection,
+				region._getReadingUnit(),
+			)
+		except AttributeError:
+			pass
+		if handler is not None and handler.enabled:
+			_updateExistingTableRowRegions(handler, virtualBuffer, windowAnchor=windowAnchor)
+		return True
+	finally:
+		_endTableRowBrailleTransition(handler)
 
 
 def _regionMatchesTableCell(
@@ -1239,6 +1515,7 @@ def _apply_braille_buffer_focus_regions(
 	focusRegions: list,
 	*,
 	regionsAlreadyUpdated: bool = False,
+	windowAnchor: TableRowWindowAnchor = "caret",
 ) -> bool:
 	for region in contextRegions:
 		region.focusToHardLeft = False
@@ -1253,16 +1530,12 @@ def _apply_braille_buffer_focus_regions(
 		None,
 	)
 	primaryFocus = _primaryTableRowFocusRegion(focusRegions, rowVirtualBuffer)
-	if primaryFocus is None:
-		if handler.buffer is mainBuffer:
-			handler.update()
-		return bool(focusRegions)
-	_focusAndScrollTableRowRegion(handler, mainBuffer, primaryFocus)
+	_applyTableRowWindowAnchor(handler, mainBuffer, windowAnchor, primaryFocus)
 	if handler.buffer is mainBuffer:
 		handler.update()
 	if primaryFocus is not None:
-		_clearStaleVirtualBufferTextInfoPendingUpdates(handler, primaryFocus._virtualBuffer)
-	return True
+		_clearStaleVirtualBufferPendingUpdates(handler, primaryFocus._virtualBuffer)
+	return bool(focusRegions)
 
 
 def _currentTableRowColumn(
@@ -1272,6 +1545,114 @@ def _currentTableRowColumn(
 		if region.isCurrentCell:
 			return region._column
 	return None
+
+
+def _scrollTableRowBrailleToRowEnd(
+	handler: braille.BrailleHandler,
+	mainBuffer: braille.BrailleBuffer,
+) -> None:
+	"""Show the tail of the current table row (e.g. ``)|``) after scrolling back from the next row."""
+	_clearTableRowFocusToHardLeft(mainBuffer)
+	_invalidateSavedBrailleWindow(mainBuffer)
+	bufferLen = len(mainBuffer.brailleCells)
+	if bufferLen <= 0:
+		return
+	displaySize = handler.displaySize
+	if bufferLen <= displaySize:
+		mainBuffer.windowStartPos = 0
+	else:
+		mainBuffer.windowEndPos = bufferLen
+
+
+def _scrollTableRowBrailleToRowStart(
+	handler: braille.BrailleHandler,
+	mainBuffer: braille.BrailleBuffer,
+) -> None:
+	"""Show the start of the current table row after scrolling forward from the previous row."""
+	_clearTableRowFocusToHardLeft(mainBuffer)
+	_invalidateSavedBrailleWindow(mainBuffer)
+	mainBuffer.windowStartPos = 0
+
+
+def _swapTableRowBrailleToCurrentRow(
+	handler: braille.BrailleHandler,
+	virtualBuffer,
+	tableRegions: list[VirtualBufferTableCellBrailleRegion],
+	*,
+	windowAnchor: TableRowWindowAnchor,
+) -> bool:
+	"""Repurpose existing cell regions for a new row (faster than a full braille rebuild)."""
+	caret = virtualBuffer.selection
+	rowCells = _getTableRowCellData(virtualBuffer, caret, withText=True)
+	if rowCells is None:
+		return False
+	try:
+		currentCell = virtualBuffer._getTableCellCoords(caret)
+	except LookupError:
+		return False
+	if len(tableRegions) != len(rowCells):
+		return False
+
+	cellSeparator, lineStart, lineEnd = _tableRowBrailleMarkers()
+	tableRowCount = _tableRowCount(
+		virtualBuffer,
+		rowCells[0].cellInfo,
+		tableID=currentCell.tableID,
+	)
+	lastIndex = len(rowCells) - 1
+	firstRegion = tableRegions[0]
+	for index, (region, cellData) in enumerate(zip(tableRegions, rowCells)):
+		region._layout = _tableRowCellBrailleLayoutForPlacement(
+			index,
+			lastIndex,
+			cellData.cellInfo,
+			cellSeparator=cellSeparator or "",
+			lineStart=lineStart or "",
+			lineEnd=lineEnd or "",
+			virtualBuffer=virtualBuffer,
+			tableID=currentCell.tableID,
+			tableRow=currentCell.row,
+			tableRowCount=tableRowCount,
+		)
+		region._isRowEndCell = index == lastIndex
+		region._cellInfo = cellData.cellInfo
+		region._cellNvdaObject = cellData.cellObj
+		region._tableID = currentCell.tableID
+		region._row = cellData.row
+		region._column = cellData.column
+		region._rowSpan = max(1, cellData.rowSpan or 1)
+		region._colSpan = max(1, cellData.colSpan or 1)
+		region.isCurrentCell = cellData.isCurrent
+		region._pendingContentCursor = cellData.contentCursor if cellData.isCurrent else None
+		_applyCellSnapshotToRegion(region, _cellDataToSnapshot(cellData))
+	tableRegions[-1]._rowBackwardCell = firstRegion
+	_clearTableRowFocusToHardLeft(handler.mainBuffer)
+	_invalidateSavedBrailleWindow(handler.mainBuffer)
+	_refreshTableRowBrailleCursorDisplay(
+		handler,
+		virtualBuffer,
+		tableRegions,
+		repositionWindow=False,
+		rebuildContent=False,
+		windowAnchor=windowAnchor,
+	)
+	return True
+
+
+def _applyTableRowWindowAnchor(
+	handler: braille.BrailleHandler,
+	mainBuffer: braille.BrailleBuffer,
+	windowAnchor: TableRowWindowAnchor,
+	primaryFocus: VirtualBufferTableCellBrailleRegion | None,
+) -> None:
+	anchor = _getHandlerTableRowWindowAnchor(handler, windowAnchor)
+	if anchor == "rowEnd":
+		_scrollTableRowBrailleToRowEnd(handler, mainBuffer)
+	elif anchor == "rowStart":
+		_scrollTableRowBrailleToRowStart(handler, mainBuffer)
+	elif primaryFocus is not None:
+		_clearHandlerTableRowWindowAnchor(handler)
+		_focusAndScrollTableRowRegion(handler, mainBuffer, primaryFocus)
 
 
 def _focusAndScrollTableRowRegion(
@@ -1287,6 +1668,7 @@ def _focusAndScrollTableRowRegion(
 	"""
 	if region is None:
 		return
+	_clearHandlerTableRowWindowAnchor(handler)
 	_clearTableRowFocusToHardLeft(mainBuffer)
 	try:
 		handler.scrollToCursorOrSelection(region)
@@ -1301,8 +1683,14 @@ def _onVirtualBufferTableRowCaretMove(
 	caretOnly: bool = False,
 ) -> None:
 	"""Refresh table-row regions for the current caret; drop stale NVDA pending scrolls."""
-	_updateExistingTableRowRegions(handler, virtualBuffer, caretOnly=caretOnly)
-	_clearStaleVirtualBufferTextInfoPendingUpdates(handler, virtualBuffer)
+	windowAnchor = _getHandlerTableRowWindowAnchor(handler)
+	_updateExistingTableRowRegions(
+		handler,
+		virtualBuffer,
+		caretOnly=caretOnly,
+		windowAnchor=windowAnchor,
+	)
+	_clearStaleVirtualBufferPendingUpdates(handler, virtualBuffer)
 
 
 def _refreshTableRowBrailleCursorDisplay(
@@ -1312,6 +1700,7 @@ def _refreshTableRowBrailleCursorDisplay(
 	*,
 	repositionWindow: bool,
 	rebuildContent: bool = False,
+	windowAnchor: TableRowWindowAnchor | None = None,
 ) -> None:
 	"""Update cell regions and optionally reposition the braille window.
 
@@ -1321,7 +1710,9 @@ def _refreshTableRowBrailleCursorDisplay(
 	"""
 	mainBuffer = handler.mainBuffer
 	tableRegions = _cellRegionsForBuffer(mainBuffer.regions, virtualBuffer)
-	if not repositionWindow:
+	if windowAnchor is None:
+		windowAnchor = _getHandlerTableRowWindowAnchor(handler)
+	if not repositionWindow and windowAnchor not in ("rowEnd", "rowStart"):
 		mainBuffer.saveWindow()
 	rebuildSet = set(changedRegions) if rebuildContent else set()
 	for region in tableRegions:
@@ -1329,14 +1720,86 @@ def _refreshTableRowBrailleCursorDisplay(
 		_updateTableRowRegion(region, rebuildContent=region in rebuildSet)
 	mainBuffer.update()
 	primaryFocus = _primaryTableRowFocusRegion(tableRegions, virtualBuffer)
-	if repositionWindow:
-		if primaryFocus is not None:
-			_focusAndScrollTableRowRegion(handler, mainBuffer, primaryFocus)
-	elif not repositionWindow:
+	if repositionWindow and windowAnchor not in ("rowEnd", "rowStart"):
+		_applyTableRowWindowAnchor(handler, mainBuffer, "caret", primaryFocus)
+	elif windowAnchor == "rowEnd":
+		_applyTableRowWindowAnchor(handler, mainBuffer, "rowEnd", primaryFocus)
+	elif windowAnchor == "rowStart":
+		_applyTableRowWindowAnchor(handler, mainBuffer, "rowStart", primaryFocus)
+	else:
 		mainBuffer.restoreWindow()
-	_clearStaleVirtualBufferTextInfoPendingUpdates(handler, virtualBuffer)
+	_clearStaleVirtualBufferPendingUpdates(handler, virtualBuffer)
 	if handler.buffer is handler.mainBuffer:
 		handler.update()
+
+
+def _tableRowCellContentChanged(
+	region: VirtualBufferTableCellBrailleRegion,
+	cellData: _TableRowCellData,
+) -> bool:
+	return (
+		region._contentText != cellData.text
+		or region._contentRawToContentPos != cellData.rawToContentPos
+		or region._contentRawTextTypeforms != cellData.rawTextTypeforms
+	)
+
+
+def _tableRowRegionsNeedingContentRefresh(
+	virtualBuffer,
+	tableRegions: list[VirtualBufferTableCellBrailleRegion],
+	*,
+	pending: set[VirtualBufferTableCellBrailleRegion] | None = None,
+) -> set[VirtualBufferTableCellBrailleRegion]:
+	"""Return row cell regions whose braille text no longer matches the virtual buffer."""
+	caret = virtualBuffer.selection
+	rowCells = _getTableRowCellData(virtualBuffer, caret, withText=True)
+	if rowCells is None or len(rowCells) != len(tableRegions):
+		return set(tableRegions)
+	cellsByColumn = {cell.column: cell for cell in rowCells}
+	changed: set[VirtualBufferTableCellBrailleRegion] = set()
+	for region in tableRegions:
+		if pending is not None and region not in pending:
+			continue
+		cellData = cellsByColumn.get(region._column)
+		if cellData is None or _tableRowCellContentChanged(region, cellData):
+			changed.add(region)
+	return changed
+
+
+def _refreshTableRowBraillePendingContent(
+	handler: braille.BrailleHandler,
+	virtualBuffer,
+	pendingRegions: set[VirtualBufferTableCellBrailleRegion],
+) -> None:
+	"""Rebuild pending table-row cells after a virtual-buffer content update (NVDA ``region.update``)."""
+	tableRegions = _cellRegionsForBuffer(handler.mainBuffer.regions, virtualBuffer)
+	if not tableRegions:
+		return
+	try:
+		currentCell = virtualBuffer._getTableCellCoords(virtualBuffer.selection)
+	except LookupError:
+		return
+	rowCells = _getTableRowCellData(virtualBuffer, virtualBuffer.selection, withText=True)
+	if rowCells is None:
+		return
+	_applyCurrentCellHighlight(tableRegions, rowCells, currentCell)
+	toRebuild = _tableRowRegionsNeedingContentRefresh(
+		virtualBuffer,
+		tableRegions,
+		pending=pendingRegions,
+	)
+	if not toRebuild:
+		toRebuild = pendingRegions & set(tableRegions)
+	if not toRebuild:
+		return
+	_refreshTableRowBrailleCursorDisplay(
+		handler,
+		virtualBuffer,
+		toRebuild,
+		repositionWindow=False,
+		rebuildContent=True,
+		windowAnchor=_getHandlerTableRowWindowAnchor(handler),
+	)
 
 
 def _refreshTableRowBrailleContent(
@@ -1518,7 +1981,11 @@ def _updateExistingTableRowRegions(
 	*,
 	scrollToCaret: bool = False,
 	caretOnly: bool = False,
+	windowAnchor: TableRowWindowAnchor = "caret",
 ) -> None:
+	if scrollToCaret:
+		_clearHandlerTableRowWindowAnchor(handler)
+		windowAnchor = "caret"
 	allRegions = handler.mainBuffer.regions
 	tableRegions = _cellRegionsForBuffer(allRegions, virtualBuffer)
 	if not tableRegions:
@@ -1534,7 +2001,14 @@ def _updateExistingTableRowRegions(
 		return
 
 	if _tableRowLayoutChanged(tableRegions, currentCell):
-		refresh_virtual_buffer_table_braille(virtualBuffer)
+		if _swapTableRowBrailleToCurrentRow(
+			handler,
+			virtualBuffer,
+			tableRegions,
+			windowAnchor=windowAnchor,
+		):
+			return
+		refresh_virtual_buffer_table_braille(virtualBuffer, windowAnchor=windowAnchor)
 		return
 
 	caret = virtualBuffer.selection
@@ -1545,7 +2019,7 @@ def _updateExistingTableRowRegions(
 		return
 
 	if _tableRowRegionsNeedRebuild(virtualBuffer, tableRegions, rowCells):
-		refresh_virtual_buffer_table_braille(virtualBuffer)
+		refresh_virtual_buffer_table_braille(virtualBuffer, windowAnchor=windowAnchor)
 		return
 
 	oldCurrentColumn = _currentTableRowColumn(tableRegions)
@@ -1602,18 +2076,22 @@ def _virtualBufferForActiveTableRowBraille(handler: braille.BrailleHandler) -> A
 
 
 def _virtualBufferTableBraille_handlePendingUpdate(self) -> None:
-	"""Refresh table-row regions using NVDA's window save/restore when updates were deferred."""
+	"""Refresh table-row regions instead of NVDA ``restoreWindow`` + ``scrollToCursorOrSelection``."""
 	virtualBuffer = _virtualBufferForActiveTableRowBraille(self)
 	if virtualBuffer is not None and self._regionsPendingUpdate:
-		try:
-			pending = set(self._regionsPendingUpdate)
-			self._regionsPendingUpdate.clear()
-			for region in pending:
-				region.pendingCaretUpdate = False
-			_updateExistingTableRowRegions(self, virtualBuffer)
-		finally:
-			self._regionsPendingUpdate.clear()
-		return
+		tablePending = {
+			region
+			for region in self._regionsPendingUpdate
+			if isinstance(region, VirtualBufferTableCellBrailleRegion)
+			and region._virtualBuffer is virtualBuffer
+		}
+		if tablePending:
+			try:
+				_clearStaleVirtualBufferPendingUpdates(self, virtualBuffer)
+				_refreshTableRowBraillePendingContent(self, virtualBuffer, tablePending)
+			finally:
+				self._regionsPendingUpdate.clear()
+			return
 	_originalHandlePendingUpdate(self)
 
 
@@ -1639,13 +2117,16 @@ def _virtualBufferTableBraille_handleCaretMove(self, obj, shouldAutoTether: bool
 			self.setTether(TetherTo.FOCUS.value, auto=True)
 		if self._tether != TetherTo.FOCUS.value:
 			return
+		if _isTableRowBrailleTransition(self):
+			_clearStaleVirtualBufferPendingUpdates(self, obj)
+			return
 		_onVirtualBufferTableRowCaretMove(self, obj, caretOnly=True)
 		if _buffer_has_table_row_regions(self.mainBuffer.regions):
-			_clearStaleVirtualBufferTextInfoPendingUpdates(self, obj)
+			_clearStaleVirtualBufferPendingUpdates(self, obj)
 			return
 	_originalHandleCaretMove(self, obj, shouldAutoTether=shouldAutoTether)
 	if tableRowActive and _buffer_has_table_row_regions(self.mainBuffer.regions):
-		_clearStaleVirtualBufferTextInfoPendingUpdates(self, obj)
+		_clearStaleVirtualBufferPendingUpdates(self, obj)
 
 
 def _virtualBufferTableBraille_handleUpdate(self, obj) -> None:
@@ -1658,8 +2139,12 @@ def _virtualBufferTableBraille_handleUpdate(self, obj) -> None:
 	if not is_table_row_braille_enabled() or not usesTableRowBrailleRegions(obj):
 		_restoreNormalVirtualBufferBraille(self, obj)
 		return
-	_onVirtualBufferTableRowCaretMove(self, obj)
-	_clearStaleVirtualBufferTextInfoPendingUpdates(self, obj)
+	if _isTableRowBrailleTransition(self):
+		_clearStaleVirtualBufferPendingUpdates(self, obj)
+		return
+	# NVDA queues the focus region; pumpAll runs _handlePendingUpdate → region.update().
+	for region in _cellRegionsForBuffer(self.mainBuffer.regions, obj):
+		self._regionsPendingUpdate.add(region)
 
 
 def schedule_virtual_document_braille_refresh() -> None:
@@ -1681,7 +2166,11 @@ def _apply_virtual_document_braille_settings() -> None:
 			return
 
 
-def refresh_virtual_buffer_table_braille(virtualBuffer) -> None:
+def refresh_virtual_buffer_table_braille(
+	virtualBuffer,
+	*,
+	windowAnchor: TableRowWindowAnchor = "caret",
+) -> None:
 	handler = braille.handler
 	if handler is None or not handler.enabled:
 		return
@@ -1697,10 +2186,11 @@ def refresh_virtual_buffer_table_braille(virtualBuffer) -> None:
 		[],
 		newFocusRegions,
 		regionsAlreadyUpdated=True,
+		windowAnchor=windowAnchor,
 	):
 		return
 	handler._doNewObject(_buildTableRowBrailleRegions(virtualBuffer))
-	_clearStaleVirtualBufferTextInfoPendingUpdates(handler, virtualBuffer)
+	_clearStaleVirtualBufferPendingUpdates(handler, virtualBuffer)
 
 
 def _gecko_getTableCellAt_vbuf_fallback(self, tableID, startPos, destRow, destCol):
@@ -1768,14 +2258,47 @@ def _uninstall_virtual_buffer_table_navigation_patches() -> None:
 
 
 def _tableRowBraille_handlerScrollBack(self) -> None:
-	if _virtualBufferForActiveTableRowBraille(self):
-		_clearTableRowFocusToHardLeft(self.mainBuffer)
+	virtualBuffer = _virtualBufferForActiveTableRowBraille(self)
+	if virtualBuffer is not None:
+		mainBuffer = self.mainBuffer
+		_clearTableRowFocusToHardLeft(mainBuffer)
+		if _tableRowBrailleAtRowStart(mainBuffer):
+			endRegion = _rowEndCellRegionForScrollBack(mainBuffer)
+			if endRegion is not None and _attemptTableRowBrailleRowTransition(
+				virtualBuffer,
+				endRegion,
+				forward=False,
+				windowAnchor="rowEnd",
+			):
+				return
+		_clearHandlerTableRowWindowAnchor(self)
 	_originalHandlerScrollBack(self)
 
 
 def _tableRowBraille_handlerScrollForward(self) -> None:
-	if _virtualBufferForActiveTableRowBraille(self):
-		_clearTableRowFocusToHardLeft(self.mainBuffer)
+	virtualBuffer = _virtualBufferForActiveTableRowBraille(self)
+	if virtualBuffer is not None:
+		mainBuffer = self.mainBuffer
+		_clearTableRowFocusToHardLeft(mainBuffer)
+		_clearHandlerTableRowWindowAnchor(self)
+		if _tableRowBrailleAtRowEnd(self, mainBuffer):
+			endRegion = _rowEndCellRegionForScrollBack(mainBuffer)
+			if endRegion is not None:
+				if _attemptTableRowBrailleRowTransition(
+					virtualBuffer,
+					endRegion,
+					forward=True,
+					windowAnchor="rowStart",
+				):
+					return
+				if _isLastTableRowForRegion(endRegion) or endRegion._layout.tableBoundarySuffix:
+					if _leaveVirtualBufferTableForward(
+						virtualBuffer,
+						tableID=endRegion._tableID,
+						tableRow=endRegion._row,
+						region=endRegion,
+					):
+						return
 	_originalHandlerScrollForward(self)
 
 
