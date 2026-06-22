@@ -28,6 +28,26 @@ addonHandler.initTranslation()
 conf = config.conf["brailleExtender"]["autoScroll"]
 
 
+def is_be_auto_scroll_active(handler=None) -> bool:
+	"""True when Braille Extender's autoscroll thread is running on ``handler``."""
+	handler = handler or braille.handler
+	return handler is not None and getattr(handler, "_auto_scroll", None) is not None
+
+
+def stop_nvda_core_autoscroll(handler=None) -> None:
+	"""Disable NVDA's built-in braille auto-scroll (NVDA 2026.2+), if available."""
+	handler = handler or braille.handler
+	if handler is None:
+		return
+	auto_scroll = getattr(handler, "autoScroll", None)
+	if not callable(auto_scroll):
+		return
+	try:
+		auto_scroll(enable=False)
+	except Exception:
+		log.debugWarning("could not disable NVDA core auto scroll", exc_info=True)
+
+
 class AutoScroll(threading.Thread):
 	_continue = True
 
@@ -47,6 +67,7 @@ class AutoScroll(threading.Thread):
 			time.sleep(next_delay)
 			if self._continue:
 				try:
+					stop_nvda_core_autoscroll()
 					braille.handler.scrollForward()
 				except wx._core.wxAssertionError as err:
 					log.error(err)
@@ -112,8 +133,10 @@ def toggle_auto_scroll(self):
 	if self._auto_scroll:
 		self._auto_scroll.stop()
 		self._auto_scroll = None
+		stop_nvda_core_autoscroll(self)
 		tones.beep(100, 100)
 	else:
+		stop_nvda_core_autoscroll(self)
 		self._auto_scroll = self.AutoScroll()
 		self._auto_scroll.start()
 		tones.beep(300, 100)

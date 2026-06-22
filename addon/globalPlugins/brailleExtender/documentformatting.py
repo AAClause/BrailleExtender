@@ -354,6 +354,48 @@ def _or_braille_mask_across_raw_positions(region: Any, mask: int) -> None:
 		_or_braille_mask_on_cell_span(region, sb, eb, mask)
 
 
+def apply_braille_region_post_translation_extras(region: Any) -> None:
+	"""Apply list, alignment, and BrailleExtender format overlays after ``Region.update``."""
+	postReplacements: list[regionhelper.BrailleCellReplacement] = []
+	noAlign = False
+	list_host = getattr(region, "_cellNvdaObject", None)
+	if list_host is None and hasattr(region, "obj") and hasattr(region.obj, "currentNVDAObject"):
+		list_host = region.obj.currentNVDAObject
+	if conf["lists"]["showLevelItem"] and list_host and hasattr(list_host, "IA2Attributes"):
+		IA2Attributes = list_host.IA2Attributes
+		tag = IA2Attributes.get("tag")
+		if tag == "li":
+			s = (int(IA2Attributes["level"]) - 1) * 2 if IA2Attributes.get("level") else 0
+			noAlign = True
+			postReplacements.append(regionhelper.BrailleCellReplacement(start=0, insertBefore=("⠀" * s)))
+	formatField = getattr(region, "formatField", None) or textInfos.FormatField()
+	if not noAlign and get_report("alignments"):
+		textAlign = formatField.get("text-align")
+		if textAlign and alignment_uses_display_line_pad(textAlign) and textAlign not in ("start", "left"):
+			textAlign_norm = normalizeTextAlign(textAlign) or textAlign
+			displaySize = braille.handler.displaySize
+			content_cells = len(region.brailleCells) - 1
+			pad_len = alignment_display_line_pad_len(textAlign_norm, displaySize, content_cells)
+			if pad_len > 0:
+				postReplacements.append(
+					regionhelper.BrailleCellReplacement(start=0, insertBefore=("⠀" * pad_len))
+				)
+	if postReplacements:
+		regionhelper.replaceBrailleCells(region, postReplacements)
+	if region.brlex_typeforms:
+		cell_masks_by_raw_pos = region.brlex_typeforms
+		active_cell_mask = 0
+		for raw_pos in range(len(region.rawText)):
+			if raw_pos in cell_masks_by_raw_pos:
+				active_cell_mask = cell_masks_by_raw_pos[raw_pos]
+			if active_cell_mask:
+				sb, eb = regionhelper.getBraillePosFromRawPos(region, raw_pos)
+				_or_braille_mask_on_cell_span(region, sb, eb, active_cell_mask)
+	align_dots = alignment_dots_cell_mask(formatField.get("text-align"))
+	if align_dots and not noAlign and get_report("alignments"):
+		_or_braille_mask_across_raw_positions(region, align_dots)
+
+
 def decorator(fn, s):
 	def _getTypeformFromFormatField(self, field, formatConfig=None):
 		if formatConfig is None:
@@ -421,49 +463,7 @@ def decorator(fn, s):
 
 	def update(self):
 		fn(self)
-		postReplacements = []
-		noAlign = False
-		if conf["lists"]["showLevelItem"] and self and hasattr(self.obj, "currentNVDAObject"):
-			curObj = self.obj.currentNVDAObject
-			if curObj and hasattr(curObj, "IA2Attributes"):
-				IA2Attributes = curObj.IA2Attributes
-				tag = IA2Attributes.get("tag")
-				if tag == "li":
-					s = (int(IA2Attributes["level"]) - 1) * 2 if IA2Attributes.get("level") else 0
-					noAlign = True
-					postReplacements.append(
-						regionhelper.BrailleCellReplacement(start=0, insertBefore=("⠀" * s))
-					)
-		formatField = self.formatField
-		if not noAlign and get_report("alignments"):
-			textAlign = formatField.get("text-align")
-			if (
-				textAlign
-				and alignment_uses_display_line_pad(textAlign)
-				and textAlign not in ("start", "left")
-			):
-				textAlign_norm = normalizeTextAlign(textAlign) or textAlign
-				displaySize = braille.handler.displaySize
-				content_cells = len(self.brailleCells) - 1
-				pad_len = alignment_display_line_pad_len(textAlign_norm, displaySize, content_cells)
-				if pad_len > 0:
-					postReplacements.append(
-						regionhelper.BrailleCellReplacement(start=0, insertBefore=("⠀" * pad_len))
-					)
-		if postReplacements:
-			regionhelper.replaceBrailleCells(self, postReplacements)
-		if self.brlex_typeforms:
-			cell_masks_by_raw_pos = self.brlex_typeforms
-			active_cell_mask = 0
-			for raw_pos in range(len(self.rawText)):
-				if raw_pos in cell_masks_by_raw_pos:
-					active_cell_mask = cell_masks_by_raw_pos[raw_pos]
-				if active_cell_mask:
-					sb, eb = regionhelper.getBraillePosFromRawPos(self, raw_pos)
-					_or_braille_mask_on_cell_span(self, sb, eb, active_cell_mask)
-		align_dots = alignment_dots_cell_mask(formatField.get("text-align"))
-		if align_dots and not noAlign and get_report("alignments"):
-			_or_braille_mask_across_raw_positions(self, align_dots)
+		apply_braille_region_post_translation_extras(self)
 
 	if s == "addTextWithFields":
 		return addTextWithFields_edit

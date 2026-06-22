@@ -867,7 +867,11 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		currentHourDate = time.strftime("%X %x (%a, %W/53, %b)", time.localtime())
 		return _brailleMessagePersistent(currentHourDate)
 
-	@script(description=_("Turn Braille Extender automatic braille scrolling on or off"))
+	@script(
+		description=_(
+			"Turn Braille Extender automatic braille scrolling on or off (not NVDA's built-in autoscroll on 2026.2+)"
+		)
+	)
 	def script_autoScroll(self, gesture):
 		if patches.is_patch_applied("braille_handler"):
 			braille.handler.toggle_auto_scroll()

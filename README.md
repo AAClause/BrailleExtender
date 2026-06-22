@@ -64,6 +64,7 @@ NVDA’s own **Settings → Braille** (and related panels) have since gained opt
 | **2024.3** | **Unicode normalization** for speech and braille; **custom braille tables** from add-ons and NVDA’s scratchpad folder. Braille Extender can add its own tables and use tables from other add-ons, not only NVDA’s built-in list. |
 | **2024.4** | **Speak character when routing** in text; more **formatting in braille** choices (e.g. tags); **paragraph start** in braille when reading by paragraph; routing fixes. |
 | **2025.1** | **Input and output tables** can follow NVDA’s **interface language**; **speak line or paragraph** when using braille **navigation** keys. |
+| **2026.2** | Built-in **braille automatic scroll** (rate slider in Braille settings and related NVDA braille command). Braille Extender still offers a richer **auto scroll**; see [Auto scroll](#auto-scroll). |
 
 ---
 
@@ -75,7 +76,7 @@ These match the tabs in **Braille Extender settings**:
 |----------|---------|
 | **General** | Update channel, speak current line while scrolling, skip blank lines, smart Caps Lock, modifier/volume feedback, two favorite displays and reload, right margin, reverse scroll, terminals (braille follows review), routing cursor behavior, announce character when routing (until NVDA handles it). |
 | **Rotor** | Which rotor items exist and their order. |
-| **Auto scroll** | Delays and behavior for automatic braille scrolling. |
+| **Auto scroll** | Delays and behavior for Braille Extender automatic braille scrolling (see [Auto scroll](#auto-scroll); NVDA 2026.2+ also has its own built-in autoscroll). |
 | **Speech History Mode** | History length, numbering, optional speech while browsing history. |
 | **Document formatting** | How formatting (bold, links, alignment, …) appears in braille, on top of NVDA’s document formatting (see [Detailed topics](#document-formatting)). |
 | **Excel** | Show cell values and formulas in braille; optional row or column overview with routing (see [Excel](#excel)). |
@@ -513,6 +514,10 @@ The rotor switches **active quick-nav / review category**. Categories include **
 
 ### Auto scroll
 
+Braille Extender provides its own **automatic braille scrolling** (timer-based, with per-display delay and extra options below). Use the **Braille Extender → Auto scroll** settings tab and the **auto scroll** command in **Input gestures** (display profiles may bind it).
+
+**NVDA 2026.2 and later** also include a separate built-in **automatic scroll** in **NVDA Settings → Braille** (rate slider and **Toggle braille automatic scroll** in NVDA’s braille commands). The two features are **not the same**: Braille Extender adds **per-display delay**, **adjust to content**, **ignore blank lines**, and **step keys** for faster/slower timing. While **Braille Extender auto scroll** is on, the add-on **keeps NVDA’s built-in autoscroll off** so they do not fight. For the richer behavior, use **Braille Extender auto scroll**; use NVDA’s only if you prefer NVDA’s simpler rate-based scrolling and have turned Braille Extender’s off.
+
 When **auto scroll** is on, the display **advances by itself** on a timer while you stay on the usual braille view. If you switch to another view (for example speech history), auto scroll **pauses** until you return.
 
 - **Delay:** stored **per braille display model**, between about **0.2 and 42 seconds** between steps (default about **3 seconds**).
@@ -536,7 +541,7 @@ When **Use custom role labels** is checked, you can edit **role**, **landmark**,
 
 - Reload two **favorite braille displays** with shortcuts.
 - **Terminals:** braille can follow the **review cursor** while you edit (PuTTY, PowerShell, cmd, bash, …).
-- **Auto scroll** with timing and blank-line options.
+- **Auto scroll** with per-display timing, blank-line options, and coordination with NVDA 2026.2+ built-in autoscroll.
 - **Multiple input/output tables** and **automatic** selection on NVDA 2025.1+.
 - **Excel:** row or column **overview on one braille line** with routing (see [Excel](#excel)).
 - **Web tables in browse mode:** full **table row on one braille line** with separator flash messages (see [Virtual documents (web tables)](#virtual-documents-web-tables)).

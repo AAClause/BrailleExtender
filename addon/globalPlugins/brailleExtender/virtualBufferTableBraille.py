@@ -22,7 +22,11 @@ from config.configFlags import ReportTableHeaders, TetherTo
 from logHandler import log
 from virtualBuffers import VirtualBuffer
 
-from .documentformatting import build_text_with_fields_format_config
+from .documentformatting import (
+	apply_braille_region_post_translation_extras,
+	build_text_with_fields_format_config,
+)
+from .autoscroll import stop_nvda_core_autoscroll
 
 try:
 	from .objectpresentation import get_roleLabel
@@ -139,7 +143,7 @@ def _clearTableRowCoordFlash() -> None:
 
 def _virtualBufferTableBraille_routeTo(self, windowPos) -> None:
 	"""Show table-row coordinate flashes via ui.message after NVDA's routing dismiss step."""
-	self.autoScroll(enable=False)
+	stop_nvda_core_autoscroll(self)
 	_clearTableRowCoordFlash()
 	self.buffer.routeTo(windowPos)
 	pending = getattr(self, _TABLE_ROW_COORD_FLASH_ATTR, None)
@@ -499,6 +503,7 @@ class _CellBrailleSnapshot:
 	rawTextTypeforms: tuple[int, ...] = ()
 	brlexTypeformItems: tuple[tuple[int, int], ...] = ()
 	endsWithField: bool = False
+	formatField: textInfos.FormatField | None = None
 
 
 @dataclass(frozen=True)
@@ -574,6 +579,18 @@ def _navigateVirtualBufferTableRow(virtualBuffer, *, forward: bool) -> bool:
 	return True
 
 
+def _tableCellTextInfo(cellInfo: textInfos.TextInfo) -> textInfos.TextInfo:
+	"""Span the full table cell.
+
+	Virtual-buffer table iteration already bounds ``cellInfo`` to the cell node.
+	``UNIT_CONTROLFIELD`` would shrink to an inner control (link, list, paragraph, …).
+	"""
+	info = cellInfo.copy()
+	if info.isCollapsed:
+		info.expand(textInfos.UNIT_CHARACTER)
+	return info
+
+
 def _populateCellBrailleBuilder(
 	builder: _CellBrailleTextBuilder,
 	cellInfo: textInfos.TextInfo,
@@ -584,8 +601,7 @@ def _populateCellBrailleBuilder(
 ) -> int | None:
 	"""Fill builder with cell braille; return raw ``cursorPos`` (NVDA three-chunk algorithm)."""
 	formatConfig = _cellBrailleFormatConfig()
-	cellField = cellInfo.copy()
-	cellField.expand(textInfos.UNIT_CONTROLFIELD)
+	cellField = _tableCellTextInfo(cellInfo)
 	inCell = False
 	if caret is not None and virtualBuffer is not None and currentCell is not None:
 		try:
@@ -688,6 +704,7 @@ def _snapshotFromCellBuilder(builder: _CellBrailleTextBuilder) -> _CellBrailleSn
 		tuple(typeforms),
 		tuple(builder.brlex_typeforms.items()),
 		builder._endsWithField,
+		getattr(builder, "formatField", None),
 	)
 
 
@@ -727,12 +744,11 @@ def _applyCellSnapshotToRegion(
 	region._contentRawTextTypeforms = snapshot.rawTextTypeforms
 	region._brlexTypeformItems = snapshot.brlexTypeformItems
 	region._endsWithField = snapshot.endsWithField
+	region.formatField = snapshot.formatField or textInfos.FormatField()
 
 
 def _cellReadingInfo(cellInfo: textInfos.TextInfo) -> textInfos.TextInfo:
-	readingInfo = cellInfo.copy()
-	readingInfo.expand(textInfos.UNIT_CONTROLFIELD)
-	return readingInfo
+	return _tableCellTextInfo(cellInfo)
 
 
 def _getTableRowCellData(
@@ -834,7 +850,7 @@ class VirtualBufferTableCellBrailleRegion(braille.CursorManagerRegion):
 		self._layout = layout or _TableRowCellBrailleLayout()
 		self._isRowEndCell = isRowEndCell
 		self._rowBackwardCell: VirtualBufferTableCellBrailleRegion | None = None
-		self.parseUndefinedChars = False
+		self.formatField = textInfos.FormatField()
 		self._contentText = contentText
 		self._contentRawToContentPos = rawToContentPos
 		self._contentRawTextTypeforms = rawTextTypeforms
@@ -871,7 +887,7 @@ class VirtualBufferTableCellBrailleRegion(braille.CursorManagerRegion):
 		self.rawTextTypeforms = (
 			[louis.plain_text] * prefixLen + contentTypeforms + [louis.plain_text] * suffixLen
 		)
-		self.brlex_typeforms = dict(self._brlexTypeformItems)
+		self.brlex_typeforms = {raw_pos + prefixLen: mask for raw_pos, mask in self._brlexTypeformItems}
 		self._len_brlex_typeforms = 0
 		self._rawToContentPos = list(
 			_padRawToContentPos(rawToContentPos, len(content)),
@@ -928,6 +944,7 @@ class VirtualBufferTableCellBrailleRegion(braille.CursorManagerRegion):
 			self.selectionStart = self.selectionEnd = None
 			self.brailleCursorPos = None
 		braille.Region.update(self)
+		apply_braille_region_post_translation_extras(self)
 
 	def _routeToCell(self) -> None:
 		dest = self._cellInfo.copy()
@@ -1383,19 +1400,25 @@ def schedule_document_formatting_braille_refresh() -> None:
 def _sameTableCell(
 	a: textInfos.TextInfo,
 	b: textInfos.TextInfo,
+	virtualBuffer=None,
 ) -> bool:
+	vb = virtualBuffer
+	if vb is None:
+		vb = getattr(a, "obj", None)
+	if vb is not None and hasattr(vb, "_getTableCellCoords"):
+		try:
+			return vb._getTableCellCoords(a) == vb._getTableCellCoords(b)
+		except LookupError:
+			pass
 	try:
 		if a.bookmark == b.bookmark:
 			return True
 	except (AttributeError, NotImplementedError, TypeError):
 		pass
-	aExpanded = a.copy()
-	bExpanded = b.copy()
-	aExpanded.expand(textInfos.UNIT_CONTROLFIELD)
-	bExpanded.expand(textInfos.UNIT_CONTROLFIELD)
+	aInfo = _tableCellTextInfo(a)
+	bInfo = _tableCellTextInfo(b)
 	return (
-		aExpanded.compareEndPoints(bExpanded, "startToStart") == 0
-		and aExpanded.compareEndPoints(bExpanded, "endToEnd") == 0
+		aInfo.compareEndPoints(bInfo, "startToStart") == 0 and aInfo.compareEndPoints(bInfo, "endToEnd") == 0
 	)
 
 
@@ -1472,7 +1495,7 @@ def _tableRowRegionsNeedRebuild(
 			return True
 		if region._column != cellData.column:
 			return True
-		if not _sameTableCell(region._cellInfo, cellData.cellInfo):
+		if not _sameTableCell(region._cellInfo, cellData.cellInfo, virtualBuffer):
 			return True
 	return False
 
