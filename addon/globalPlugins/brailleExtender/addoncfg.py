@@ -138,6 +138,15 @@ def _excelConfspec() -> dict[str, str]:
 	}
 
 
+def _virtualDocumentConfspec() -> dict[str, str]:
+	return {
+		"tableRowBraille": "boolean(default=True)",
+		"cellSeparator": "string(default=' | ')",
+		"lineStart": "string(default='(| ')",
+		"lineEnd": "string(default=' |)')",
+	}
+
+
 def getConfspec():
 	global curBD
 	curBD = braille.handler.display.name
@@ -338,6 +347,7 @@ def getConfspec():
 			"refreshForegroundObjNameChange": "boolean(default=False)",
 		},
 		"excel": _excelConfspec(),
+		"virtualDocument": _virtualDocumentConfspec(),
 	}
 
 
