@@ -104,13 +104,7 @@ _VARIATION_SELECTOR_SUFFIX_RE = re.compile(r"([^\ufe00-\ufe0f])[\ufe00-\ufe0f]\u
 
 def _stop_nvda_core_autoscroll() -> None:
 	"""Disable NVDA's built-in braille auto-scroll (CallLater), if available."""
-	auto_scroll = getattr(braille.handler, "autoScroll", None)
-	if not callable(auto_scroll):
-		return
-	try:
-		auto_scroll(enable=False)
-	except Exception:
-		log.debugWarning("could not disable NVDA core auto scroll", exc_info=True)
+	autoscroll.stop_nvda_core_autoscroll()
 
 
 def _saveOriginals():
@@ -139,6 +133,8 @@ def _saveOriginals():
 	if hasattr(braille.BrailleHandler, "setTether"):
 		o["BrailleHandler.setTether"] = braille.BrailleHandler.setTether
 	o["BrailleHandler._displayWithCursor"] = getattr(braille.BrailleHandler, "_displayWithCursor", None)
+	if hasattr(braille.BrailleHandler, "autoScroll"):
+		o["BrailleHandler.autoScroll"] = braille.BrailleHandler.autoScroll
 	if hasattr(louis, "_createTablesString"):
 		o["_createTablesString"] = louis._createTablesString
 	return o
@@ -1046,6 +1042,11 @@ def _addTextWithFields(
 				self._endsWithField = False
 				continue
 			elif cmd == "controlStart":
+				if getattr(self, "suppressTableRowLayoutMarkers", False) and field.get(
+					"role"
+				) == get_control_type("ROLE_TABLE"):
+					ctrl_fields.append(field)
+					continue
 				if self._skipFieldsNotAtStartOfNode and not field.get("_startOfNode"):
 					text = None
 				else:
@@ -1080,6 +1081,10 @@ def _addTextWithFields(
 			elif cmd == "controlEnd":
 				in_clickable = False
 				field = ctrl_fields.pop()
+				if getattr(self, "suppressTableRowLayoutMarkers", False) and field.get(
+					"role"
+				) == get_control_type("ROLE_TABLE"):
+					continue
 				text = info.getControlFieldBraille(field, ctrl_fields, False, formatConfig)
 				if not text:
 					continue
@@ -1554,6 +1559,12 @@ def apply_patches() -> None:
 
 		_try_apply("louis_createTablesString", _apply_louis)
 
+	def _patched_braille_handler_auto_scroll(self, enable: bool) -> None:
+		"""Keep NVDA and Braille Extender autoscroll from running together (NVDA 2026.2+)."""
+		if enable and autoscroll.is_be_auto_scroll_active(self):
+			return
+		_originals["BrailleHandler.autoScroll"](self, enable)
+
 	def _apply_braille_handler():
 		from .braille_terminal import (
 			make_patched_handle_caret_move,
@@ -1570,6 +1581,8 @@ def apply_patches() -> None:
 		braille.BrailleHandler.report_auto_scroll_delay = autoscroll.report_auto_scroll_delay
 		braille.BrailleHandler.toggle_auto_scroll = autoscroll.toggle_auto_scroll
 		braille.BrailleHandler._displayWithCursor = _displayWithCursor
+		if "BrailleHandler.autoScroll" in _originals:
+			braille.BrailleHandler.autoScroll = _patched_braille_handler_auto_scroll
 		braille.BrailleHandler.getTether = getTetherWithRoleTerminal
 		braille.BrailleHandler.handleGainFocus = make_patched_handle_gain_focus(_originals)
 		if _originals.get("BrailleHandler.setTether"):
@@ -1590,6 +1603,7 @@ def apply_patches() -> None:
 	else:
 		log.debug("Applied %d patch groups: %s", len(_appliedPatches), _appliedPatches)
 	_install_excel_braille_helpers()
+	_install_virtual_buffer_table_braille()
 	try:
 		speechhistorymode.install()
 	except Exception:
@@ -1607,6 +1621,15 @@ def _install_excel_braille_helpers() -> None:
 		sync_excel_braille_regions_patch()
 	except Exception:
 		log.warning("could not install Excel braille helpers", exc_info=True)
+
+
+def _install_virtual_buffer_table_braille() -> None:
+	try:
+		from .virtualBufferTableBraille import install_virtual_buffer_table_braille
+
+		install_virtual_buffer_table_braille()
+	except Exception:
+		log.warning("could not install virtual buffer table braille", exc_info=True)
 
 
 def is_patch_applied(name: str) -> bool:
@@ -1643,6 +1666,12 @@ def unload_patches() -> None:
 
 		uninstall_excel_braille_regions()
 		uninstall_excel_header_text_guards()
+	except Exception:
+		pass
+	try:
+		from .virtualBufferTableBraille import uninstall_virtual_buffer_table_braille
+
+		uninstall_virtual_buffer_table_braille()
 	except Exception:
 		pass
 
@@ -1701,6 +1730,8 @@ def unload_patches() -> None:
 				braille.BrailleHandler.handleCaretMove = _originals["BrailleHandler.handleCaretMove"]
 			if _originals.get("BrailleHandler._displayWithCursor"):
 				braille.BrailleHandler._displayWithCursor = _originals["BrailleHandler._displayWithCursor"]
+			if _originals.get("BrailleHandler.autoScroll"):
+				braille.BrailleHandler.autoScroll = _originals["BrailleHandler.autoScroll"]
 			for attr in (
 				"AutoScroll",
 				"_auto_scroll",
