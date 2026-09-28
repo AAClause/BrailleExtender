@@ -762,14 +762,8 @@ class BrailleTablesDlg(gui.settingsDialogs.SettingsPanel):
 		outputFNs = [t[0] for t in outputData]
 		inputFNs = [t[0] for t in inputData]
 
-		activeOutput = utils.getActiveOutputTableForSwitch()
-		activeInput = utils.getActiveInputTableForSwitch()
-		self.oTables = set(addoncfg.outputTables or []) | {activeOutput}
-		self.iTables = set(addoncfg.inputTables or []) | {activeInput}
-		self.oTables &= set(outputFNs)
-		self.iTables &= set(inputFNs)
-		self.oTables.add(activeOutput)
-		self.iTables.add(activeInput)
+		self.oTables = set(addoncfg.outputTables or []) & set(outputFNs)
+		self.iTables = set(addoncfg.inputTables or []) & set(inputFNs)
 
 		sHelper = gui.guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
 
