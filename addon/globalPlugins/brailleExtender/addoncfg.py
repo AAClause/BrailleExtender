@@ -205,6 +205,8 @@ def getConfspec():
 		"inputTables": 'string(default="%s")' % config.conf["braille"]["inputTable"]
 		+ ", unicode-braille.utb",
 		"outputTables": "string(default=%s)" % config.conf["braille"]["translationTable"],
+		"primaryInputTable": 'string(default="")',
+		"secondaryInputTable": 'string(default="None")',
 		"tabSpace": "boolean(default=False)",
 		f"tabSize_{curBD}": "integer(min=1, default=2, max=42)",
 		"undefinedCharsRepr": {
