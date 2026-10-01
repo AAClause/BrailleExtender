@@ -373,27 +373,6 @@ def sync_preferred_table_lists() -> None:
 		for t in outputTables
 		if t and t in listOutputTables and not custom_braille_tables.is_custom_table_configured(t)
 	]
-	if utils.supportsAutomaticBrailleTables():
-		if "auto" not in inputTables:
-			inputTables.insert(0, "auto")
-		if "auto" not in outputTables:
-			outputTables.insert(0, "auto")
-	activeInput = utils.getActiveInputTableForSwitch()
-	activeOutput = utils.getActiveOutputTableForSwitch()
-	if (
-		activeInput
-		and activeInput not in inputTables
-		and activeInput in listInputTables
-		and not custom_braille_tables.is_custom_table_configured(activeInput)
-	):
-		inputTables.append(activeInput)
-	if (
-		activeOutput
-		and activeOutput not in outputTables
-		and activeOutput in listOutputTables
-		and not custom_braille_tables.is_custom_table_configured(activeOutput)
-	):
-		outputTables.append(activeOutput)
 	_sync_preferred_table_list_config("inputTables", inputTables)
 	_sync_preferred_table_list_config("outputTables", outputTables)
 
