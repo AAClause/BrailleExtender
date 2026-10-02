@@ -18,7 +18,15 @@ if GLOBAL_PLUGINS_DIR not in sys.path:
 
 
 class BrailleTableMock:
-	def __init__(self, file_name: str, display_name: str, *, input_table: bool = True, output_table: bool = True, contracted: bool = False):
+	def __init__(
+		self,
+		file_name: str,
+		display_name: str,
+		*,
+		input_table: bool = True,
+		output_table: bool = True,
+		contracted: bool = False,
+	):
 		self.fileName = file_name
 		self.displayName = display_name
 		self.input = input_table
@@ -35,16 +43,37 @@ class BrailleTableMock:
 
 # Define standard tables for tests
 SAMPLE_TABLES = [
-	BrailleTableMock("en-us-comp8.utb", "English (U.S.) 8 dot computer braille", input_table=True, output_table=True, contracted=False),
-	BrailleTableMock("unicode-braille.utb", "Unicode braille", input_table=True, output_table=True, contracted=False),
-	BrailleTableMock("en-ueb-g2.ctb", "Unified English Braille Code (grade 2)", input_table=True, output_table=True, contracted=True),
-	BrailleTableMock("fr-bfu-comp8.utb", "French 8 dot computer braille", input_table=True, output_table=True, contracted=False),
+	BrailleTableMock(
+		"en-us-comp8.utb",
+		"English (U.S.) 8 dot computer braille",
+		input_table=True,
+		output_table=True,
+		contracted=False,
+	),
+	BrailleTableMock(
+		"unicode-braille.utb", "Unicode braille", input_table=True, output_table=True, contracted=False
+	),
+	BrailleTableMock(
+		"en-ueb-g2.ctb",
+		"Unified English Braille Code (grade 2)",
+		input_table=True,
+		output_table=True,
+		contracted=True,
+	),
+	BrailleTableMock(
+		"fr-bfu-comp8.utb",
+		"French 8 dot computer braille",
+		input_table=True,
+		output_table=True,
+		contracted=False,
+	),
 	BrailleTableMock("ar-ar-g1.utb", "Arabic 6 dot", input_table=True, output_table=True, contracted=False),
 ]
 
 
 class ConfDict(dict):
 	"""Dict that returns sub-ConfDict for missing keys."""
+
 	def __getitem__(self, key):
 		if key not in self:
 			self[key] = ConfDict()
@@ -68,6 +97,7 @@ def build_mock_modules():
 				"description": "Test Description",
 				"updateChannel": "stable",
 			}
+
 	addonHandler.Addon = AddonMock
 
 	# versionInfo
@@ -103,36 +133,46 @@ def build_mock_modules():
 
 	# config
 	config = types.ModuleType("config")
-	conf = ConfDict({
-		"braille": ConfDict({
-			"inputTable": "en-us-comp8.utb",
-			"translationTable": "en-us-comp8.utb",
-			"display": "noBraille",
-			"expandAtCursor": False,
-		}),
-		"brailleExtender": ConfDict({
-			"inputTables": "en-us-comp8.utb,unicode-braille.utb",
-			"outputTables": "en-us-comp8.utb",
-			"activeInputTable": "",
-			"activeOutputTable": "",
-			"primaryInputTable": "",
-			"secondaryInputTable": "None",
-			"inputTableShortcuts": "?",
-			"postTable": "None",
-			"brailleDisplay1": "last",
-			"brailleDisplay2": "last",
-			"tabSpace": False,
-			"tabSize_noBraille": 2,
-			"updateChannel": "stable",
-			"objectPresentation": ConfDict({
-				"orderProperties": "typeform,controlField,name,role,states,value,description,keyboardShortcut,positionInfoLevel,current,placeholder,cellCoordsText",
-			}),
-			"features": ConfDict({
-				"roleLabels": False,
-				"attributes": True,
-			}),
-		}),
-	})
+	conf = ConfDict(
+		{
+			"braille": ConfDict(
+				{
+					"inputTable": "en-us-comp8.utb",
+					"translationTable": "en-us-comp8.utb",
+					"display": "noBraille",
+					"expandAtCursor": False,
+				}
+			),
+			"brailleExtender": ConfDict(
+				{
+					"inputTables": "en-us-comp8.utb,unicode-braille.utb",
+					"outputTables": "en-us-comp8.utb",
+					"activeInputTable": "",
+					"activeOutputTable": "",
+					"primaryInputTable": "",
+					"secondaryInputTable": "None",
+					"inputTableShortcuts": "?",
+					"postTable": "None",
+					"brailleDisplay1": "last",
+					"brailleDisplay2": "last",
+					"tabSpace": False,
+					"tabSize_noBraille": 2,
+					"updateChannel": "stable",
+					"objectPresentation": ConfDict(
+						{
+							"orderProperties": "typeform,controlField,name,role,states,value,description,keyboardShortcut,positionInfoLevel,current,placeholder,cellCoordsText",
+						}
+					),
+					"features": ConfDict(
+						{
+							"roleLabels": False,
+							"attributes": True,
+						}
+					),
+				}
+			),
+		}
+	)
 	conf.spec = ConfDict()
 	config.conf = conf
 
@@ -141,14 +181,18 @@ def build_mock_modules():
 	appModuleHandler.getAppModuleForNVDAObject = MagicMock(return_value=types.SimpleNamespace(appName="nvda"))
 
 	appModules_excel = types.ModuleType("appModules.excel")
+
 	class AppModuleMock:
 		pass
+
 	appModules_excel.AppModule = AppModuleMock
 
 	globalCommands = types.ModuleType("globalCommands")
 	globalCommands.commands = MagicMock()
+
 	class GlobalCommands:
 		script_braille_routeTo = MagicMock()
+
 	globalCommands.GlobalCommands = GlobalCommands
 
 	keyLabels = types.ModuleType("keyLabels")
@@ -191,11 +235,13 @@ def build_mock_modules():
 
 	# brailleInput
 	brailleInput = types.ModuleType("brailleInput")
+
 	class BrailleInputHandler:
 		_translate = MagicMock()
 		emulateKey = MagicMock()
 		input = MagicMock()
 		sendChars = MagicMock()
+
 	brailleInput.BrailleInputHandler = BrailleInputHandler
 	braille_input_handler = types.SimpleNamespace(
 		table=table_dict["en-us-comp8.utb"],
@@ -208,24 +254,30 @@ def build_mock_modules():
 	braille.getControlFieldBraille = MagicMock()
 	braille.getFormatFieldBraille = MagicMock()
 	braille.getPropertiesBraille = MagicMock()
+
 	class Region:
 		update = MagicMock()
+
 	class NVDAObjectRegion(Region):
 		update = MagicMock()
+
 	class TextInfoRegion(Region):
 		_addTextWithFields = MagicMock()
 		update = MagicMock()
 		previousLine = MagicMock()
 		nextLine = MagicMock()
 		_getTypeformFromFormatField = MagicMock()
+
 	class ReviewTextInfoRegion(TextInfoRegion):
 		pass
+
 	class BrailleHandler:
 		getTether = MagicMock()
 		handleGainFocus = MagicMock()
 		handleCaretMove = MagicMock()
 		setTether = MagicMock()
 		_displayWithCursor = MagicMock()
+
 	braille.Region = Region
 	braille.NVDAObjectRegion = NVDAObjectRegion
 	braille.TextInfoRegion = TextInfoRegion
@@ -245,14 +297,18 @@ def build_mock_modules():
 
 	controlTypes = types.ModuleType("controlTypes")
 	controlTypes.IsCurrent = types.SimpleNamespace(NO=0, YES=1)
+
 	class OutputReason:
 		FOCUS = 1
 		CARET = 2
 		SAYALL = 3
 		ONLY = 4
+
 	controlTypes.OutputReason = OutputReason
+
 	class Role:
 		UNKNOWN = 0
+
 	controlTypes.Role = Role
 
 	# scriptHandler
@@ -262,6 +318,7 @@ def build_mock_modules():
 		def decorator(fn):
 			fn._script_kwargs = kwargs
 			return fn
+
 		return decorator
 
 	scriptHandler.script = script_decorator
@@ -392,10 +449,13 @@ def build_mock_modules():
 	comtypes_automation.BSTR = str
 	comtypes.automation = comtypes_automation
 	import ctypes
+
 	class GUID(ctypes.Structure):
 		_fields_ = [("Data1", ctypes.c_ulong)]
+
 		def __init__(self, *args, **kwargs):
 			pass
+
 	comtypes.c_float = ctypes.c_float
 	comtypes.COMMETHOD = MagicMock(return_value=lambda f: f)
 	comtypes.GUID = GUID
@@ -414,8 +474,10 @@ def build_mock_modules():
 	NVDAHelper = types.ModuleType("NVDAHelper")
 	NVDAHelper.__path__ = []
 	NVDAHelper_localLib = types.ModuleType("NVDAHelper.localLib")
+
 	class EXCEL_CELLINFO:
 		pass
+
 	NVDAHelper_localLib.EXCEL_CELLINFO = EXCEL_CELLINFO
 	NVDAHelper.localLib = NVDAHelper_localLib
 
@@ -423,16 +485,20 @@ def build_mock_modules():
 	NVDAObjects = types.ModuleType("NVDAObjects")
 	NVDAObjects.__path__ = []
 	NVDAObjects_behaviors = types.ModuleType("NVDAObjects.behaviors")
+
 	class ProgressBar:
 		pass
+
 	NVDAObjects_behaviors.ProgressBar = ProgressBar
 	NVDAObjects.behaviors = NVDAObjects_behaviors
 
 	NVDAObjects_window = types.ModuleType("NVDAObjects.window")
 	NVDAObjects_window.__path__ = []
 	NVDAObjects_window_excel = types.ModuleType("NVDAObjects.window.excel")
+
 	class ExcelCellInfo:
 		pass
+
 	NVDAObjects_window_excel.ExcelCellInfo = ExcelCellInfo
 	NVDAObjects_window.excel = NVDAObjects_window_excel
 	NVDAObjects.window = NVDAObjects_window
@@ -452,6 +518,7 @@ def build_mock_modules():
 
 	# Built-in translation functions in builtins
 	import builtins
+
 	builtins._ = lambda s: s
 	builtins.ngettext = lambda s, p, n: s if n == 1 else p
 	builtins.pgettext = lambda c, s: s
