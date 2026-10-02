@@ -19,7 +19,7 @@ from . import braille_table_chain
 from . import custom_braille_tables
 from . import updatecheck
 from . import utils
-from .common import POST_TABLE_NONE
+from .common import POST_TABLE_NONE, SECONDARY_INPUT_TABLE_NONE
 from .advancedinput import SettingsDlg as AdvancedInputModeDlg
 from .common import (
 	addonName,
@@ -795,6 +795,22 @@ class BrailleTablesDlg(gui.settingsDialogs.SettingsPanel):
 		)
 		self.inputTableShortcuts.SetSelection(iSht)
 
+		primChoices = [_("Use current input table")] + [t[1] for t in inputData]
+		primTableVal = config.conf["brailleExtender"].get("primaryInputTable", "")
+		primIdx = inputFNs.index(primTableVal) + 1 if primTableVal in inputFNs else 0
+		self.primaryInputTable = sHelper.addLabeledControl(
+			_("&Primary input table:"), wx.Choice, choices=primChoices
+		)
+		self.primaryInputTable.SetSelection(primIdx)
+
+		secChoices = [_("None")] + [t[1] for t in inputData]
+		secTableVal = config.conf["brailleExtender"].get("secondaryInputTable", SECONDARY_INPUT_TABLE_NONE)
+		secIdx = inputFNs.index(secTableVal) + 1 if secTableVal in inputFNs else 0
+		self.secondaryInputTable = sHelper.addLabeledControl(
+			_("&Secondary input table:"), wx.Choice, choices=secChoices
+		)
+		self.secondaryInputTable.SetSelection(secIdx)
+
 		postOutputFNs = braille_table_chain.list_output_table_file_names()
 		lt = [_("None")] + [t[1] for t in addoncfg.tables if t.output]
 		postTableVal = config.conf["brailleExtender"]["postTable"]
@@ -867,6 +883,17 @@ class BrailleTablesDlg(gui.settingsDialogs.SettingsPanel):
 			if self.inputTableShortcuts.GetSelection() > 0
 			else "?"
 		)
+		inputFNs = [t[0] for t in inputData]
+		if hasattr(self, "primaryInputTable"):
+			primIdx = self.primaryInputTable.GetSelection()
+			config.conf["brailleExtender"]["primaryInputTable"] = (
+				"" if primIdx == 0 else inputFNs[primIdx - 1]
+			)
+		if hasattr(self, "secondaryInputTable"):
+			secIdx = self.secondaryInputTable.GetSelection()
+			config.conf["brailleExtender"]["secondaryInputTable"] = (
+				SECONDARY_INPUT_TABLE_NONE if secIdx == 0 else inputFNs[secIdx - 1]
+			)
 		postOutputFNs = braille_table_chain.list_output_table_file_names()
 		postTableID = self.postTable.GetSelection()
 		config.conf["brailleExtender"]["postTable"] = (

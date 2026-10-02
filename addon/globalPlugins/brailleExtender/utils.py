@@ -35,6 +35,7 @@ from .common import (
 	default_braille_table_file_for_cur_language,
 	NVDA_HAS_AUTOMATIC_BRAILLE_TABLES,
 	NVDA_HAS_CUSTOM_BRAILLE_TABLES,
+	SECONDARY_INPUT_TABLE_NONE,
 )
 from . import huc
 from . import volumehelper
@@ -514,6 +515,101 @@ def apply_braille_input_table(table_id: str) -> None:
 	if brailleInput.handler:
 		brailleInput.handler._table = table
 	persist_input_table_selection(table_id)
+
+
+def format_input_table_announcement(table_name: str) -> str:
+	"""Format the announcement string when switching or toggling an input table."""
+	return _("Input table: %s") % table_name
+
+
+def getSecondaryInputTable() -> str:
+	"""Return the configured secondary input table, or SECONDARY_INPUT_TABLE_NONE."""
+	return config.conf["brailleExtender"].get("secondaryInputTable", SECONDARY_INPUT_TABLE_NONE)
+
+
+def setSecondaryInputTable(table_id: str) -> None:
+	"""Set and persist the secondary input table."""
+	config.conf["brailleExtender"]["secondaryInputTable"] = table_id or SECONDARY_INPUT_TABLE_NONE
+
+
+def getPrimaryInputTable() -> str:
+	"""Return the configured primary input table, or empty string if not configured."""
+	return config.conf["brailleExtender"].get("primaryInputTable", "")
+
+
+def setPrimaryInputTable(table_id: str) -> None:
+	"""Set and persist the primary input table."""
+	config.conf["brailleExtender"]["primaryInputTable"] = table_id or ""
+
+
+def toggle_input_table() -> tuple[str, str]:
+	"""Toggle between the primary and secondary input braille tables.
+
+	Returns:
+		A tuple of (target_table_id, announcement_message).
+	"""
+	from .custom_braille_tables import is_table_usable
+
+	default_table = (
+		"auto"
+		if supportsAutomaticBrailleTables()
+		else default_braille_table_file_for_cur_language(is_input=True)
+	)
+	current_table = getActiveInputTableForSwitch()
+	if not current_table:
+		current_table = default_table
+
+	secondary_table = getSecondaryInputTable()
+	primary_table = getPrimaryInputTable()
+
+	# If secondary is not configured or None, fall back to default table (or primary)
+	if not secondary_table or secondary_table == SECONDARY_INPUT_TABLE_NONE:
+		target_table = (
+			primary_table
+			if (primary_table and (primary_table == "auto" or is_table_usable(primary_table)))
+			else default_table
+		)
+		apply_braille_input_table(target_table)
+		display_name = get_braille_table_display_name(target_table, is_input=True)
+		return target_table, format_input_table_announcement(display_name)
+
+	# If secondary is configured but unusable, fall back to default table
+	if secondary_table != "auto" and not is_table_usable(secondary_table):
+		log.warning(
+			"Secondary input table %r is unavailable; falling back to default table %r",
+			secondary_table,
+			default_table,
+		)
+		target_table = default_table
+		apply_braille_input_table(target_table)
+		display_name = get_braille_table_display_name(target_table, is_input=True)
+		return target_table, format_input_table_announcement(display_name)
+
+	# If primary is not explicitly set, determine primary from current table
+	if not primary_table or primary_table == SECONDARY_INPUT_TABLE_NONE:
+		if current_table == secondary_table:
+			primary_table = default_table
+		else:
+			primary_table = current_table
+
+	# Validate primary table
+	if primary_table != "auto" and not is_table_usable(primary_table):
+		primary_table = default_table
+
+	# Toggle between primary and secondary
+	if current_table == secondary_table:
+		target_table = primary_table
+	else:
+		if not getPrimaryInputTable():
+			setPrimaryInputTable(current_table)
+		target_table = secondary_table
+
+	if target_table != "auto" and not is_table_usable(target_table):
+		target_table = default_table
+
+	apply_braille_input_table(target_table)
+	display_name = get_braille_table_display_name(target_table, is_input=True)
+	return target_table, format_input_table_announcement(display_name)
 
 
 def apply_braille_output_table(table_id: str) -> None:

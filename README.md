@@ -115,6 +115,7 @@ These match the tabs in **Braille Extender settings**:
 - **Rotation lists:** your **input** and **output** table lists are **names in order, separated by commas**. The **next/previous table** commands move through that order (assign them in **Input gestures** if your display profile does not already). **Custom Braille Extender tables are not listed here**—choose them only in the custom braille tables dialog (see below).
 - **Automatic table row:** On **NVDA 2025.1+**, you can include **automatic** entries; the add-on resolves them with NVDA’s language-based default tables. On older NVDA, **auto** is not supported the same way—use explicit table files.
 - **Shortcut input table:** optional separate table used for certain shortcuts.
+- **Primary and secondary input tables:** configure an optional secondary input table (and optional primary table) in settings to quickly toggle between two input tables with `NVDA+Control+Shift+I`.
 - **Additional Liblouis output pass:** optional **second output table** applied after the main one (tables from your preferred output list; not inactive custom tables).
 - **Tabs as spaces:** show tab characters as a run of spaces; **tab width** is per active display (range **1–42**).
 - **Manage custom braille tables…:** opens the custom-tables dialog (see below).

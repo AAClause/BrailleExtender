@@ -114,6 +114,7 @@ _REVERSE_SCROLL_EXCLUDED_BRAILLE_IDS = frozenset(
 # script_advancedInput              kb:nvda+windows+i
 # script_undefinedCharsDesc         kb:nvda+windows+u
 # script_switchInputBrailleTable    kb:shift+NVDA+i
+# script_toggleInputBrailleTable    kb:control+shift+NVDA+i
 # script_switchOutputBrailleTable   kb:shift+NVDA+u
 # script_currentBrailleTable        kb:shift+NVDA+p
 # script_reload_brailledisplay1     kb:nvda+j
@@ -1037,6 +1038,17 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		utils.apply_braille_input_table(nextTable)
 		self.reloadBrailleTables()
 		ui.message(_("Input: %s") % utils.get_braille_table_display_name(nextTable, is_input=True))
+
+	@script(
+		description=_("Toggle between primary and secondary input braille tables"),
+		gesture="kb:control+shift+NVDA+i",
+	)
+	def script_toggleInputBrailleTable(self, gesture):
+		if addoncfg.noUnicodeTable:
+			return ui.message(_("NVDA 2017.3 or later is required to use this feature"))
+		_target_table, msg = utils.toggle_input_table()
+		self.reloadBrailleTables()
+		ui.message(msg)
 
 	@script(
 		description=_(
