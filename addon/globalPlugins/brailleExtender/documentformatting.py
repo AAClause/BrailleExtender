@@ -4,6 +4,7 @@ from __future__ import annotations
 # documentformatting.py
 # Part of BrailleExtender addon for NVDA
 # Copyright 2016-2020 André-Abush CLAUSE, released under GPL.
+import functools
 from collections import namedtuple
 from typing import Any
 
@@ -308,6 +309,58 @@ def report_formatting(report):
 	ui.message(_("{}: {}").format(label_report, label_state))
 
 
+@functools.cache
+def _braille_output_flags() -> dict[str, int]:
+	"""NVDA ``documentFormatting`` keys stored as output-channel bitmasks, with their braille bit.
+
+	``fontAttributeReporting`` exists from NVDA 2025.1 (``reportFontAttributes`` boolean before) and
+	``reportSpellingErrors2`` from NVDA 2026.1 (``reportSpellingErrors`` boolean before). NVDA tests
+	the braille bit, so writing ``True`` (1, the speech bit) does not enable braille output.
+	"""
+	flags: dict[str, int] = {}
+	try:
+		from config.configFlags import OutputMode
+
+		flags["fontAttributeReporting"] = int(OutputMode.BRAILLE)
+	except (ImportError, AttributeError):
+		pass
+	try:
+		from config.configFlags import ReportSpellingErrors
+
+		braille_flag = getattr(ReportSpellingErrors, "BRAILLE", None)
+		if braille_flag is not None:
+			flags["reportSpellingErrors2"] = int(braille_flag)
+	except ImportError:
+		pass
+	return flags
+
+
+#: NVDA ``documentFormatting`` keys holding an integer choice where 0 means off; when the add-on
+#: row is enabled, NVDA's own non-zero choice is kept, else the given value is used.
+_ENABLED_CHOICE_DEFAULTS: dict[str, int] = {
+	"reportTableHeaders": 1,  # ReportTableHeaders.ROWS_AND_COLUMNS
+}
+
+
+def _format_config_value(normalized_key: str, addon_row: str | None, nvda_value: Any, report: Any) -> Any:
+	"""Value of an NVDA format-config key for the add-on report row (enabled / disabled / follow NVDA)."""
+	if conf["plainText"] or addon_row not in (CHOICE_enabled, CHOICE_disabled):
+		return report
+	braille_flag = _braille_output_flags().get(normalized_key)
+	if braille_flag is not None:
+		previous = nvda_value if isinstance(nvda_value, int) and not isinstance(nvda_value, bool) else 0
+		if addon_row == CHOICE_enabled:
+			return previous | braille_flag
+		return previous & ~braille_flag
+	if normalized_key in _ENABLED_CHOICE_DEFAULTS:
+		if addon_row == CHOICE_disabled:
+			return 0
+		if isinstance(nvda_value, int) and not isinstance(nvda_value, bool) and nvda_value:
+			return nvda_value
+		return _ENABLED_CHOICE_DEFAULTS[normalized_key]
+	return report
+
+
 def build_text_with_fields_format_config(*, suppress_table_cell_coords: bool = False) -> dict[str, Any]:
 	"""Build the formatConfig dict used by TextInfoRegion._addTextWithFields."""
 	formatConfig_ = config.conf["documentFormatting"].copy()
@@ -315,21 +368,12 @@ def build_text_with_fields_format_config(*, suppress_table_cell_coords: bool = F
 		normalized_key = normalize_report_key(e)
 		if not normalized_key:
 			continue
-		addon_row = conf["reports"].get(e)
-		if addon_row == CHOICE_enabled and normalized_key == "fontAttributeReporting":
-			try:
-				from config.configFlags import OutputMode
-
-				prev = formatConfig_.get(normalized_key)
-				mask = int(OutputMode.SPEECH) | int(OutputMode.BRAILLE)
-				if isinstance(prev, int):
-					formatConfig_[normalized_key] = prev | mask
-				else:
-					formatConfig_[normalized_key] = mask
-			except Exception:
-				formatConfig_[normalized_key] = True
-		else:
-			formatConfig_[normalized_key] = get_report(e)
+		formatConfig_[normalized_key] = _format_config_value(
+			normalized_key,
+			conf["reports"].get(e),
+			formatConfig_.get(normalized_key),
+			get_report(e),
+		)
 	if suppress_table_cell_coords:
 		formatConfig_["reportTableCellCoords"] = False
 	return formatConfig_
