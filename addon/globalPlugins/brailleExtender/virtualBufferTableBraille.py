@@ -1,37 +1,34 @@
 # coding: utf-8
 # virtualBufferTableBraille.py - Part of BrailleExtender addon for NVDA
 # Copyright 2026 André-Abush CLAUSE, released under GPL.
-"""Display a virtual-buffer table row on one braille line as a single NVDA region.
+"""Show the current virtual-buffer table row on one braille line.
 
-The whole current table row is one ``braille.CursorManagerRegion`` subclass whose ``obj`` is
-the virtual buffer. Because ``region.obj`` matches the focused browse-mode document, NVDA's
-native braille pipeline drives updates (``handleCaretMove``/``_handlePendingUpdate``),
-scrolling (``BrailleBuffer`` scroll -> ``nextLine``/``previousLine`` at the row edges) and, by
-only ever touching regions already on the display, keeps background tabs/windows from leaving
-stale content on the display.
+Browse-mode documents get one :class:`VirtualBufferBrailleRegion` (returned by
+``VirtualBuffer.getBrailleRegions``, after the usual root-object region, exactly as NVDA's
+``getFocusRegions`` does for a cursor manager). When the caret is in a table cell the region shows
+the whole row, one segment per cell; elsewhere it is a plain ``CursorManagerRegion`` line.
 
 Design rules (robustness and speed):
 
-* The display is never blanked. When the buffer is momentarily unavailable (loading, pass-through,
-  dying) or an update fails, the region keeps its last good content. A region commits its new
-  state atomically, only once the whole row has been built.
-* Switching between the normal document line and the row region happens synchronously in the
-  ``handleCaretMove`` hook, before NVDA runs its pending update, so no stale or empty frame is
-  ever rendered and the outdated region is never rebuilt for nothing.
-* Reading the caret position costs one ``getTextWithFields`` call (cell coordinates and table
-  size come from the same field list). Cell coordinates and per-cell braille text are cached per
-  row and invalidated whenever the virtual buffer content changes, so moving the caret inside a
-  row only re-renders the cell holding the caret.
-* The region hides the focus-context regions with ``hidePreviousRegions`` rather than patching
-  NVDA's focus-context generator.
+* The add-on never replaces braille regions itself. The row/line switch happens inside
+  ``update``, so NVDA's own pipeline (focus, caret moves, buffer updates, pending updates, window
+  save/restore, messages) handles everything, the same way on NVDA 2024.1 through 2027.x.
+* The display is never blanked by the add-on: when the buffer is momentarily unavailable or a row
+  cannot be built, the last content stays; a row is committed atomically once fully built.
+* Reading the caret position costs one ``getTextWithFields`` call (cell coordinates and table size
+  come from the same field list). Cell coordinates and cell braille text are cached per row and
+  invalidated whenever the buffer content changes, so moving inside a row only re-renders the cell
+  holding the caret. Content-driven row refreshes are coalesced.
+* NVDA 2026.3 moved most braille symbols out of the ``braille`` namespace (old accesses log a
+  warning with a stack trace); they are resolved once at import from their current location.
 
-Hooks: ``VirtualBuffer.getBrailleRegions``, a thin ``BrailleHandler.handleCaretMove`` wrapper,
-content-change counters on ``VirtualBuffer`` and Gecko table-navigation fallbacks.
+Hooks: ``VirtualBuffer.getBrailleRegions``, content-change counters on ``VirtualBuffer`` and Gecko
+table-navigation fallbacks. All are undone by :func:`uninstall_virtual_buffer_table_braille`.
 """
 
 from __future__ import annotations
 
-import itertools
+import importlib
 from collections.abc import Iterable
 from typing import Any, Literal, NamedTuple
 
@@ -68,6 +65,38 @@ except ImportError:
 from .utils import get_control_type
 
 addonHandler.initTranslation()
+
+
+def _braille_symbol(name: str, *newModules: str, required: bool = True):
+	"""Fetch a braille symbol from where NVDA 2026.3+ defines it, else from ``braille``.
+
+	NVDA 2026.3 moved these symbols out of the ``braille`` package namespace; accessing them
+	through ``braille`` still works but logs a warning with a stack trace on every access, which
+	is far too costly on the per-update code paths of this module. Resolve each once, here.
+	"""
+	for moduleName in newModules:
+		try:
+			module = importlib.import_module(moduleName)
+		except ImportError:
+			continue
+		if name in vars(module):
+			return vars(module)[name]
+	if required:
+		return getattr(braille, name)
+	return getattr(braille, name, None)
+
+
+_Region = _braille_symbol("Region", "braille.regions.base")
+_TextInfoRegion = _braille_symbol("TextInfoRegion", "braille.regions.textInfo")
+_CursorManagerRegion = _braille_symbol("CursorManagerRegion", "braille.regions.textInfo")
+_NVDAObjectRegion = _braille_symbol("NVDAObjectRegion", "braille.regions.NVDAObject")
+_roleLabels = _braille_symbol("roleLabels", "braille.labels")
+TEXT_SEPARATOR = _braille_symbol("TEXT_SEPARATOR", "braille.constants")
+# Private helpers, available from NVDA 2025.1 only.
+_speakOnRouting = _braille_symbol("_speakOnRouting", "braille.regions.textInfo", required=False)
+_speakOnNavigatingByUnit = _braille_symbol(
+	"_speakOnNavigatingByUnit", "braille.regions.textInfo", required=False
+)
 
 ROW_CELL_SEPARATOR = " | "
 ROW_LINE_START = "(| "
@@ -114,7 +143,7 @@ def _formatSignature(formatConfig: dict[str, Any]) -> tuple:
 	)
 
 
-# Foreground guard
+# Focused document
 
 
 def _virtualBufferFromFocusTree() -> VirtualBuffer | None:
@@ -128,11 +157,6 @@ def _virtualBufferFromFocusTree() -> VirtualBuffer | None:
 	):
 		return treeInterceptor
 	return None
-
-
-def _isForegroundVirtualBuffer(virtualBuffer) -> bool:
-	"""True when ``virtualBuffer`` is the focused browse-mode document."""
-	return virtualBuffer is not None and virtualBuffer is _virtualBufferFromFocusTree()
 
 
 # Virtual buffer content generation (cache invalidation)
@@ -263,22 +287,11 @@ def _readCaretTable(virtualBuffer) -> _CaretTable | None:
 	return _CaretTable(state[0], state[1], caret)
 
 
-def _caretInTableRow(virtualBuffer) -> bool:
-	try:
-		return _readCaretTable(virtualBuffer) is not None
-	except _Unavailable:
-		return False
-
-
-def usesTableRowBrailleRegions(virtualBuffer) -> bool:
-	return is_table_row_braille_enabled() and _caretInTableRow(virtualBuffer)
-
-
 def _tableRoleBrailleLabelCandidates() -> tuple[str, ...]:
 	candidates: list[str] = []
 	table_role = get_control_type("ROLE_TABLE")
 	try:
-		label = braille.roleLabels[table_role]
+		label = _roleLabels[table_role]
 	except (KeyError, TypeError):
 		label = None
 	if label and label not in candidates:
@@ -438,7 +451,7 @@ class _RowCell:
 		self.snapshot: _CellBrailleSnapshot | None = None
 
 
-class _CellBrailleTextBuilder(braille.TextInfoRegion):
+class _CellBrailleTextBuilder(_TextInfoRegion):
 	"""Build cell braille like ``TextInfoRegion``; the row region supplies boundary markers."""
 
 	suppressTableCellCoords = True
@@ -603,6 +616,19 @@ def _buildCellBraille(
 # Row collection and navigation
 
 
+def _rawTableID(tableID):
+	"""The ``table-id`` value stored in the virtual buffer, for attribute searches.
+
+	Since NVDA 2026.3, ``Gecko_ia2_TextInfo._normalizeControlField`` reports ``table-id`` as
+	``(docHandle, id)`` (#17750), while buffer searches (``VirtualBuffer._iterTableCells``,
+	which matches ``str(tableID)``) still need the raw ``id``. Other buffers and older NVDA
+	versions report the raw value, which is returned unchanged.
+	"""
+	if isinstance(tableID, tuple) and tableID:
+		return tableID[-1]
+	return tableID
+
+
 def _rowCellRecord(info: textInfos.TextInfo, tableID, row: int) -> _RowCell | None:
 	"""Coordinates of ``info`` (a cell of ``tableID``/``row``), or ``None`` if it does not match."""
 	probe = info.copy()
@@ -619,7 +645,7 @@ def _rowCellRecord(info: textInfos.TextInfo, tableID, row: int) -> _RowCell | No
 
 def _collectRowCells(virtualBuffer, tableID, row: int) -> list[_RowCell]:
 	cells: list[_RowCell] = []
-	for info in virtualBuffer._iterTableCells(tableID, row=row):
+	for info in virtualBuffer._iterTableCells(_rawTableID(tableID), row=row):
 		record = _rowCellRecord(info, tableID, row)
 		if record is not None:
 			cells.append(record)
@@ -630,7 +656,7 @@ def _collectRowCells(virtualBuffer, tableID, row: int) -> list[_RowCell]:
 def _rowEdgeCellInfo(virtualBuffer, tableID, row: int, *, first: bool) -> textInfos.TextInfo | None:
 	"""First or last cell of a row in document order (cells of a row are laid out in column order)."""
 	edge = None
-	for info in virtualBuffer._iterTableCells(tableID, row=row):
+	for info in virtualBuffer._iterTableCells(_rawTableID(tableID), row=row):
 		if first:
 			return info
 		edge = info
@@ -675,7 +701,7 @@ def _readTableStateAt(info: textInfos.TextInfo):
 
 
 def _speakOnNavigate(virtualBuffer) -> None:
-	speak = getattr(braille, "_speakOnNavigatingByUnit", None)
+	speak = _speakOnNavigatingByUnit
 	if speak is None:
 		return
 	try:
@@ -766,14 +792,14 @@ def _documentLineNav(virtualBuffer, *, forward: bool, start: bool = False) -> No
 	A ``CursorManagerRegion`` is used (not a plain ``TextInfoRegion``) so ``_setCursor`` moves
 	the browse-mode selection rather than trying to move a physical caret.
 	"""
-	helper = braille.CursorManagerRegion(virtualBuffer)
+	helper = _CursorManagerRegion(virtualBuffer)
 	helper._readingInfo = virtualBuffer.selection.copy()
 	if helper._readingInfo.isCollapsed:
 		helper._readingInfo.expand(helper._getReadingUnit())
 	if forward:
-		braille.TextInfoRegion.nextLine(helper)
+		_TextInfoRegion.nextLine(helper)
 	else:
-		braille.TextInfoRegion.previousLine(helper, start)
+		_TextInfoRegion.previousLine(helper, start)
 	_notifyBrailleCaretMoved(virtualBuffer)
 
 
@@ -819,33 +845,34 @@ class _RowLayout:
 	)
 
 
-class TableRowBrailleRegion(braille.CursorManagerRegion):
-	"""One braille region for the whole current table row (one cell per segment)."""
+class VirtualBufferBrailleRegion(_CursorManagerRegion):
+	"""Braille region of a browse-mode document: the whole table row in a table, NVDA's line elsewhere.
 
-	allowPageTurns = True
+	A single region instance serves the document whatever the caret position. Switching between
+	row and line presentation happens inside :meth:`update`, so NVDA's own pipeline
+	(``handleGainFocus``, ``handleCaretMove``, ``handleUpdate``, pending updates, window save and
+	restore) drives everything and the add-on never replaces regions behind NVDA's back. That is
+	what keeps the display from going blank: there is no region swap that can race with focus
+	events, buffer reloads or messages.
+
+	Outside tables the region behaves exactly like NVDA's ``CursorManagerRegion`` (including
+	Braille Extender's patches of ``TextInfoRegion``).
+	"""
 
 	def __init__(self, virtualBuffer) -> None:
 		super().__init__(virtualBuffer)
 		self._virtualBuffer = virtualBuffer
 		self.formatField = textInfos.FormatField()
 		self._cellNvdaObject = None
+		self._brailleInputIndStart = None
 		self._segments: list[_CellSegment] = []
 		self._tableID = None
 		self._row: int = 0
 		self._dims: tuple[int, int] | None = None
 		self._rowKey: tuple | None = None
 		self._rowCells: list[_RowCell] = []
-		self.isBuilt = False
-		self.focusToHardLeft = True
-		# The row uses the whole display: no ancestor/context regions next to it.
-		self.hidePreviousRegions = True
-		# Valid (empty) translation state, so the region is safe to render before its first update.
-		self.rawText = braille.TEXT_SEPARATOR
-		self.rawTextTypeforms = [louis.plain_text]
-		self._rawToContentPos = [0]
-		self.brlex_typeforms = {}
-		self._len_brlex_typeforms = 0
-		braille.Region.update(self)
+		#: True while the region shows a table row rather than a document line.
+		self.rowMode = False
 
 	def _isMultiline(self) -> bool:
 		return True
@@ -968,7 +995,7 @@ class TableRowBrailleRegion(braille.CursorManagerRegion):
 
 		rawText = "".join(parts)
 		if not rawText:
-			rawText = braille.TEXT_SEPARATOR
+			rawText = TEXT_SEPARATOR
 			typeforms = [louis.plain_text]
 			rawToContent = [0]
 		layout = _RowLayout()
@@ -983,7 +1010,7 @@ class TableRowBrailleRegion(braille.CursorManagerRegion):
 		layout.dims = dims
 		return layout
 
-	def _commit(self, layout: _RowLayout) -> None:
+	def _commitRow(self, layout: _RowLayout) -> None:
 		self.rawText = layout.rawText
 		self.rawTextTypeforms = layout.typeforms
 		self._rawToContentPos = layout.rawToContent
@@ -996,15 +1023,25 @@ class TableRowBrailleRegion(braille.CursorManagerRegion):
 		self._row = layout.row
 		self._dims = layout.dims
 		self.formatField = textInfos.FormatField()
-		oldLength = len(self.brailleCells)
-		braille.Region.update(self)
+		self._cellNvdaObject = None
+		self._brailleInputIndStart = None
+		getDefaultLanguage = getattr(self, "_getDefaultRegionLanguage", None)
+		if getDefaultLanguage is not None:
+			# NVDA 2026.3+: the per-position languages of the previous line no longer apply.
+			self._languageIndexes = {0: getDefaultLanguage()}
+		# The row uses the whole display: the document/ancestor regions before it are hidden.
+		self.hidePreviousRegions = True
+		self.focusToHardLeft = True
+		_Region.update(self)
 		self._applyTypeformMasks()
-		if self.isBuilt and len(self.brailleCells) != oldLength:
-			# NVDA restores the previous display window after a content-driven update and only
-			# re-scrolls to the cursor on caret moves. If the row got shorter the restored window
-			# can lie past its end and the display looks empty, so ask for a scroll to the cursor.
-			self.pendingCaretUpdate = True
-		self.isBuilt = True
+		self.rowMode = True
+
+	def _updateLine(self) -> None:
+		"""Regular NVDA document line (``TextInfoRegion.update``, with Braille Extender's patches)."""
+		self.rowMode = False
+		self._segments = []
+		self._cellNvdaObject = None
+		_CursorManagerRegion.update(self)
 
 	def _applyTypeformMasks(self) -> None:
 		if not self.brlex_typeforms:
@@ -1019,35 +1056,47 @@ class TableRowBrailleRegion(braille.CursorManagerRegion):
 					if 0 <= braillePos < len(self.brailleCells):
 						self.brailleCells[braillePos] |= active
 
-	def update(self) -> None:
-		"""Rebuild from the current caret row.
-
-		Never blanks the display: if the buffer is unavailable, the caret is outside a table
-		(the caret-move hook swaps the region out) or building fails, the previous content stays.
-		"""
-		virtualBuffer = self._virtualBuffer
+	def _readRowState(self) -> _CaretTable | None:
+		"""Caret table state if the row should be shown; raises ``_Unavailable`` to keep the display."""
+		if not is_table_row_braille_enabled():
+			return None
 		try:
-			state = _readCaretTable(virtualBuffer)
+			return _readCaretTable(self._virtualBuffer)
 		except _Unavailable:
-			log.debug("virtual buffer table braille: update skipped, buffer unavailable")
-			return
-		if state is None:
-			log.debug("virtual buffer table braille: update found the caret outside a table")
-			if self.isBuilt:
-				_scheduleLeaveRowMode(virtualBuffer, self)
-			return
+			if self.brailleCells:
+				raise
+			# Nothing displayed yet: let the regular line update decide (as NVDA would).
+			return None
+
+	def update(self) -> None:
+		wasRowMode = self.rowMode
+		oldLength = len(self.brailleCells)
 		try:
-			layout = self._layoutRow(state, _cellBrailleFormatConfig())
-		except Exception:  # noqa: BLE001
-			# Drop the cache: it may hold cells of a buffer that changed under us.
-			self._rowKey = None
-			log.debugWarning("virtual buffer table braille: row update failed", exc_info=True)
+			state = self._readRowState()
+		except _Unavailable:
+			log.debug("virtual buffer table braille: buffer unavailable, keeping the display")
 			return
-		if layout is None:
-			log.debug("virtual buffer table braille: update found no cell in the row")
-			self._rowKey = None
-			return
-		self._commit(layout)
+		layout = None
+		if state is not None:
+			try:
+				layout = self._layoutRow(state, _cellBrailleFormatConfig())
+			except Exception:  # noqa: BLE001
+				# Drop the cache: it may hold cells of a buffer that changed under us.
+				self._rowKey = None
+				log.debugWarning("virtual buffer table braille: row update failed", exc_info=True)
+				if wasRowMode:
+					# Keep the last row rather than flashing the document line.
+					return
+		if layout is not None:
+			self._commitRow(layout)
+		else:
+			self._updateLine()
+		if self.rowMode != wasRowMode or (self.rowMode and len(self.brailleCells) != oldLength):
+			# NVDA restores the previous display window after a content-driven update and only
+			# scrolls to the cursor after caret moves. When the presentation or the row length
+			# changes, the restored window may be meaningless (or past the end: an empty
+			# display), so ask NVDA to scroll to the cursor.
+			self.pendingCaretUpdate = True
 
 	# routing
 
@@ -1073,7 +1122,7 @@ class TableRowBrailleRegion(braille.CursorManagerRegion):
 		dest.collapse()
 		if not self._setSelection(dest):
 			return
-		speak = getattr(braille, "_speakOnRouting", None)
+		speak = _speakOnRouting
 		if speak is not None:
 			try:
 				speak(dest.copy())
@@ -1088,7 +1137,7 @@ class TableRowBrailleRegion(braille.CursorManagerRegion):
 	def _setSelection(self, info: textInfos.TextInfo) -> bool:
 		return _setBrowseCaret(self._virtualBuffer, info)
 
-	def routeTo(self, braillePos: int) -> None:
+	def _routeToRowPos(self, braillePos: int) -> None:
 		try:
 			rawPos = self.brailleToRawPos[braillePos]
 		except IndexError:
@@ -1129,6 +1178,38 @@ class TableRowBrailleRegion(braille.CursorManagerRegion):
 		if message:
 			core.callLater(0, ui.message, message)
 
+	def routeTo(self, braillePos: int) -> None:
+		if self.rowMode:
+			self._routeToRowPos(braillePos)
+		else:
+			super().routeTo(braillePos)
+
+	def _rowTextInfoForBraillePos(self, braillePos: int) -> textInfos.TextInfo:
+		try:
+			rawPos = self.brailleToRawPos[braillePos]
+		except IndexError:
+			rawPos = max(0, len(self.rawText) - 1)
+		seg = self._segmentForRawPos(rawPos)
+		if seg is None:
+			info = self._virtualBuffer.selection.copy()
+			info.collapse()
+			return info
+		inCell = rawPos - seg.contentStart
+		if 0 <= inCell < len(seg.rawToContentPos) and rawPos < seg.contentEnd:
+			try:
+				dest = _tableCellTextInfo(seg.cellInfo).moveToCodepointOffset(seg.rawToContentPos[inCell])
+			except (RuntimeError, NotImplementedError, ValueError):
+				dest = seg.cellInfo.copy()
+		else:
+			dest = seg.cellInfo.copy()
+		dest.collapse()
+		return dest
+
+	def getTextInfoForBraillePos(self, braillePos: int) -> textInfos.TextInfo:
+		if self.rowMode:
+			return self._rowTextInfoForBraillePos(braillePos)
+		return super().getTextInfoForBraillePos(braillePos)
+
 	# row navigation (called by BrailleBuffer scroll at row edges)
 
 	def _isLastRow(self) -> bool:
@@ -1137,6 +1218,9 @@ class TableRowBrailleRegion(braille.CursorManagerRegion):
 		return self._dims is not None and self._row == self._dims[0]
 
 	def nextLine(self) -> None:
+		if not self.rowMode:
+			super().nextLine()
+			return
 		if self._isLastRow() and _leaveVirtualBufferTableForward(
 			self._virtualBuffer,
 			tableID=self._tableID,
@@ -1148,180 +1232,81 @@ class TableRowBrailleRegion(braille.CursorManagerRegion):
 		_documentLineNav(self._virtualBuffer, forward=True)
 
 	def previousLine(self, start: bool = False) -> None:
+		if not self.rowMode:
+			super().previousLine(start)
+			return
 		if _moveToAdjacentTableRow(self._virtualBuffer, forward=False):
 			return
 		# At the first row: leave the table upward using normal document navigation.
 		_documentLineNav(self._virtualBuffer, forward=False, start=start)
 
 
+# Kept for code referring to the previous class name.
+TableRowBrailleRegion = VirtualBufferBrailleRegion
+
+
 # Region installation and NVDA integration
 
 
-def _shouldUseTableRowBrailleRegions(obj, review: bool = False) -> bool:
-	return not review and is_table_row_braille_enabled() and _caretInTableRow(obj)
+def virtualBuffer_getBrailleRegions(obj, review: bool = False) -> Iterable[_Region]:
+	"""Regions of a browse-mode document: the root object region, then the document region.
 
-
-def virtualBuffer_getBrailleRegions(obj, review: bool = False) -> Iterable[braille.Region]:
-	"""Return the table-row region, or raise NotImplementedError for NVDA fallback.
-
-	Must not be a generator: NVDA only catches NotImplementedError from the initial call.
+	Mirrors NVDA's ``getFocusRegions`` for a cursor manager, with the document region replaced by
+	:class:`VirtualBufferBrailleRegion`. Must not be a generator: NVDA only catches
+	``NotImplementedError`` from the initial call.
 	"""
-	if not _shouldUseTableRowBrailleRegions(obj, review):
+	if review or not is_table_row_braille_enabled():
 		raise NotImplementedError
-	return [TableRowBrailleRegion(obj)]
+	return [
+		_NVDAObjectRegion(obj.rootNVDAObject, appendText=TEXT_SEPARATOR),
+		VirtualBufferBrailleRegion(obj),
+	]
 
 
-def _tableRowRegion(handler: braille.BrailleHandler, virtualBuffer) -> TableRowBrailleRegion | None:
-	"""The row region currently shown for ``virtualBuffer`` (always the last main-buffer region)."""
+def _documentRegion(handler, virtualBuffer) -> VirtualBufferBrailleRegion | None:
+	"""Our region currently shown for ``virtualBuffer`` (always the last main-buffer region)."""
+	if handler is None:
+		return None
 	regions = handler.mainBuffer.regions
 	if not regions:
 		return None
 	last = regions[-1]
-	if isinstance(last, TableRowBrailleRegion) and last._virtualBuffer is virtualBuffer:
+	if isinstance(last, VirtualBufferBrailleRegion) and last._virtualBuffer is virtualBuffer:
 		return last
 	return None
-
-
-def _discardPendingUpdate(handler: braille.BrailleHandler, region) -> None:
-	pending = getattr(handler, "_regionsPendingUpdate", None)
-	if pending is not None and region is not None:
-		pending.discard(region)
-
-
-def _enterRowMode(handler: braille.BrailleHandler, virtualBuffer) -> bool:
-	"""Show a freshly built row region for ``virtualBuffer`` (synchronously, single build)."""
-	region = TableRowBrailleRegion(virtualBuffer)
-	region.update()
-	if not region.isBuilt:
-		log.debug("virtual buffer table braille: row region could not be built")
-		return False
-	log.debug("virtual buffer table braille: entering row mode")
-	regions = handler.mainBuffer.regions
-	if regions:
-		# The region being replaced would otherwise be rebuilt by the pending update for nothing.
-		_discardPendingUpdate(handler, regions[-1])
-	handler._doNewObject([region])
-	return True
-
-
-def _leaveRowMode(handler: braille.BrailleHandler, virtualBuffer, region=None) -> None:
-	"""Replace the row region with the regular document braille, synchronously."""
-	log.debug("virtual buffer table braille: leaving row mode")
-	_discardPendingUpdate(handler, region)
-	oldRegions = list(handler.mainBuffer.regions)
-	handler._doNewObject(
-		itertools.chain(
-			braille.getFocusContextRegions(virtualBuffer, oldFocusRegions=oldRegions),
-			braille.getFocusRegions(virtualBuffer),
-		)
-	)
-
-
-_leaveScheduled = False
-
-
-def _scheduleLeaveRowMode(virtualBuffer, region) -> None:
-	"""Fallback used when a region notices, mid-update, that the caret left the table.
-
-	Normally ``_syncRowMode`` has already swapped regions in the caret-move hook; this covers
-	other update triggers. Runs once, after re-validating that the swap is still needed.
-	"""
-	global _leaveScheduled
-	if _leaveScheduled:
-		return
-	_leaveScheduled = True
-
-	def _run() -> None:
-		global _leaveScheduled
-		_leaveScheduled = False
-		try:
-			handler = braille.handler
-			if handler is None or not handler.enabled:
-				return
-			if _tableRowRegion(handler, virtualBuffer) is not region:
-				return
-			if not _isForegroundVirtualBuffer(virtualBuffer):
-				return
-			try:
-				state = _readCaretTable(virtualBuffer)
-			except _Unavailable:
-				return
-			if state is None:
-				_leaveRowMode(handler, virtualBuffer, region)
-		except Exception:  # noqa: BLE001
-			log.debugWarning("virtual buffer table braille: leaving row mode failed", exc_info=True)
-
-	core.callLater(0, _run)
-
-
-def _syncRowMode(handler: braille.BrailleHandler, virtualBuffer) -> None:
-	"""Make the main buffer match the caret: row region inside a table, regular braille outside."""
-	if not (isinstance(virtualBuffer, VirtualBuffer) and handler.enabled):
-		return
-	if handler._tether != TetherTo.FOCUS.value or not _isForegroundVirtualBuffer(virtualBuffer):
-		return
-	region = _tableRowRegion(handler, virtualBuffer)
-	if not is_table_row_braille_enabled():
-		if region is not None:
-			_leaveRowMode(handler, virtualBuffer, region)
-		return
-	try:
-		state = _readCaretTable(virtualBuffer)
-	except _Unavailable:
-		return
-	if state is None:
-		if region is not None:
-			_leaveRowMode(handler, virtualBuffer, region)
-	elif region is None:
-		_enterRowMode(handler, virtualBuffer)
-	# else: already in row mode; NVDA's pending update (queued by the original handleCaretMove)
-	# rebuilds the region.
-
-
-def _virtualBufferTableBraille_handleCaretMove(self, obj, shouldAutoTether: bool = True) -> None:
-	_originalHandleCaretMove(self, obj, shouldAutoTether=shouldAutoTether)
-	try:
-		_syncRowMode(self, obj)
-	except Exception:  # noqa: BLE001
-		log.debugWarning("virtual buffer table braille: caret-move sync failed", exc_info=True)
 
 
 # Settings / document-formatting refreshes
 
 
 def _rebuildForSettings() -> None:
-	"""Re-render the focused document after a setting changed (new region = fresh caches)."""
+	"""Re-render the focused document after a setting changed."""
 	handler = braille.handler
 	if handler is None or not handler.enabled:
 		return
 	virtualBuffer = _virtualBufferFromFocusTree()
 	if virtualBuffer is None:
 		return
-	region = _tableRowRegion(handler, virtualBuffer)
-	try:
-		wantRow = is_table_row_braille_enabled() and _caretInTableRow(virtualBuffer)
-	except _Unavailable:
-		return
-	if wantRow:
-		if _enterRowMode(handler, virtualBuffer):
+	region = _documentRegion(handler, virtualBuffer)
+	if region is None:
+		if is_table_row_braille_enabled() and handler._tether == TetherTo.FOCUS.value:
+			# The document is shown with NVDA's own regions: rebuild them so ours are used.
+			handler.handleGainFocus(virtualBuffer, shouldAutoTether=False)
 			return
-	elif region is not None:
-		_leaveRowMode(handler, virtualBuffer, region)
-		return
+	else:
+		# Cached cell text depends on the settings; the region falls back to the regular line
+		# by itself when row braille has been disabled.
+		region._rowKey = None
 	handler.handleUpdate(virtualBuffer)
 	handler._handlePendingUpdate()
 
 
-def _runSafely(fn) -> None:
-	try:
-		fn()
-	except Exception:  # noqa: BLE001
-		log.debugWarning("virtual buffer table braille: refresh failed", exc_info=True)
-
-
 def refresh_document_formatting_braille_display() -> None:
 	"""Refresh braille after document formatting settings change."""
-	_runSafely(_rebuildForSettings)
+	try:
+		_rebuildForSettings()
+	except Exception:  # noqa: BLE001
+		log.debugWarning("virtual buffer table braille: refresh failed", exc_info=True)
 
 
 def schedule_document_formatting_braille_refresh() -> None:
@@ -1348,6 +1333,11 @@ def _gecko_getNearestTableCell_vbuf_when_row_braille(self, startPos, cell, movem
 	return _originalGeckoGetNearestTableCell(self, startPos, cell, movement, axis)
 
 
+def _gecko_iterTableCells_rawID(self, tableID, *args, **kwargs):
+	"""Search the buffer with the raw ``table-id`` (NVDA 2026.3+ reports ``(docHandle, id)``)."""
+	return _originalGeckoIterTableCells(self, _rawTableID(tableID), *args, **kwargs)
+
+
 def _tableFindNewCell_safe_recovery(self, movement=None, axis=None, selection=None, raiseOnEdge=False):
 	try:
 		return _originalTableFindNewCell(self, movement, axis, selection, raiseOnEdge)
@@ -1359,15 +1349,14 @@ def _tableFindNewCell_safe_recovery(self, movement=None, axis=None, selection=No
 
 # Content-change counters: any buffer update or (re)load invalidates cached row cells
 
-
-# Content-driven refreshes of the row are coalesced: a table whose cells change many times per
-# second must not rebuild the row and redraw the display on every notification.
+# Content-driven refreshes of a displayed row are coalesced: a table whose cells change many
+# times per second must not rebuild the row and redraw the display on every notification.
 CONTENT_REFRESH_DELAY_MS = 150
 
 
 def _deliverContentUpdate(virtualBuffer) -> None:
 	virtualBuffer._beUpdatePending = False
-	if _originalHandleUpdate is None or not getattr(virtualBuffer, "isAlive", True):
+	if _originalHandleUpdate is None or not getattr(virtualBuffer, "VBufHandle", None):
 		return
 	try:
 		_originalHandleUpdate(virtualBuffer)
@@ -1379,9 +1368,8 @@ def _virtualBuffer_handleUpdate_counted(self):
 	# The generation is bumped at once so that any update running before the deferred one
 	# (e.g. caused by a caret move) already sees fresh content.
 	_bumpContentGeneration(self)
-	handler = braille.handler
-	rowModeActive = handler is not None and handler.enabled and _tableRowRegion(handler, self) is not None
-	if not rowModeActive:
+	region = _documentRegion(braille.handler, self)
+	if region is None or not region.rowMode:
 		return _originalHandleUpdate(self)
 	if getattr(self, "_beUpdatePending", False):
 		return None
@@ -1397,90 +1385,86 @@ def _virtualBuffer_loadBufferDone_counted(self, *args, **kwargs):
 
 # install / uninstall
 
-_installed = False
-_originalGetBrailleRegions: Any = None
-_originalHandleCaretMove: Any = None
+#: (owner, attribute, own value before patching, whether owner defined it itself), in patch order.
+_appliedPatches: list[tuple[Any, str, Any, bool]] = []
+
+
+def _patch(owner, name: str, replacement, *, required: bool = True) -> Any:
+	"""Replace ``owner.name`` and record how to undo it; return the previous (inherited) value."""
+	ownValues = vars(owner)
+	had = name in ownValues
+	previous = getattr(owner, name, None)
+	if previous is None and required:
+		log.debug("virtual buffer table braille: %s.%s missing, not patched", owner.__name__, name)
+		return None
+	_appliedPatches.append((owner, name, ownValues.get(name), had))
+	setattr(owner, name, replacement)
+	return previous
+
+
 _originalHandleUpdate: Any = None
 _originalLoadBufferDone: Any = None
 _originalGeckoGetTableCellAt: Any = None
 _originalGeckoGetNearestTableCell: Any = None
+_originalGeckoIterTableCells: Any = None
 _originalTableFindNewCell: Any = None
 
 
-def _install_navigation_patches() -> None:
-	global _originalGeckoGetTableCellAt, _originalGeckoGetNearestTableCell, _originalTableFindNewCell
-	if Gecko_ia2 is not None:
-		if _originalGeckoGetTableCellAt is None:
-			_originalGeckoGetTableCellAt = Gecko_ia2._getTableCellAt
-			Gecko_ia2._getTableCellAt = _gecko_getTableCellAt_vbuf_fallback
-		if _originalGeckoGetNearestTableCell is None:
-			_originalGeckoGetNearestTableCell = Gecko_ia2._getNearestTableCell
-			Gecko_ia2._getNearestTableCell = _gecko_getNearestTableCell_vbuf_when_row_braille
-	else:
-		log.debug("Gecko virtual buffer unavailable; table navigation patches skipped")
-	if DocumentWithTableNavigation is not None:
-		if _originalTableFindNewCell is None:
-			_originalTableFindNewCell = DocumentWithTableNavigation._tableFindNewCell
-			DocumentWithTableNavigation._tableFindNewCell = _tableFindNewCell_safe_recovery
-	else:
-		log.debug("DocumentWithTableNavigation unavailable; table recovery patch skipped")
-
-
-def _uninstall_navigation_patches() -> None:
-	global _originalGeckoGetTableCellAt, _originalGeckoGetNearestTableCell, _originalTableFindNewCell
-	if Gecko_ia2 is not None:
-		if _originalGeckoGetTableCellAt is not None:
-			Gecko_ia2._getTableCellAt = _originalGeckoGetTableCellAt
-			_originalGeckoGetTableCellAt = None
-		if _originalGeckoGetNearestTableCell is not None:
-			Gecko_ia2._getNearestTableCell = _originalGeckoGetNearestTableCell
-			_originalGeckoGetNearestTableCell = None
-	if DocumentWithTableNavigation is not None and _originalTableFindNewCell is not None:
-		DocumentWithTableNavigation._tableFindNewCell = _originalTableFindNewCell
-		_originalTableFindNewCell = None
-
-
 def install_virtual_buffer_table_braille() -> None:
-	global _installed, _originalGetBrailleRegions, _originalHandleCaretMove
 	global _originalHandleUpdate, _originalLoadBufferDone
-	if _installed:
+	global _originalGeckoGetTableCellAt, _originalGeckoGetNearestTableCell, _originalTableFindNewCell
+	global _originalGeckoIterTableCells
+	if _appliedPatches:
 		return
-	_originalGetBrailleRegions = getattr(VirtualBuffer, "getBrailleRegions", None)
-	VirtualBuffer.getBrailleRegions = virtualBuffer_getBrailleRegions
-	_originalHandleCaretMove = braille.BrailleHandler.handleCaretMove
-	braille.BrailleHandler.handleCaretMove = _virtualBufferTableBraille_handleCaretMove
-	_originalHandleUpdate = getattr(VirtualBuffer, "_handleUpdate", None)
-	if _originalHandleUpdate is not None:
-		VirtualBuffer._handleUpdate = _virtualBuffer_handleUpdate_counted
-	_originalLoadBufferDone = getattr(VirtualBuffer, "_loadBufferDone", None)
-	if _originalLoadBufferDone is not None:
-		VirtualBuffer._loadBufferDone = _virtualBuffer_loadBufferDone_counted
-	_install_navigation_patches()
-	_installed = True
-	log.debug("Virtual buffer table row braille (single-region) installed")
+	try:
+		_patch(VirtualBuffer, "getBrailleRegions", virtualBuffer_getBrailleRegions, required=False)
+		_originalHandleUpdate = _patch(VirtualBuffer, "_handleUpdate", _virtualBuffer_handleUpdate_counted)
+		_originalLoadBufferDone = _patch(
+			VirtualBuffer,
+			"_loadBufferDone",
+			_virtualBuffer_loadBufferDone_counted,
+		)
+		if Gecko_ia2 is not None:
+			_originalGeckoGetTableCellAt = _patch(
+				Gecko_ia2,
+				"_getTableCellAt",
+				_gecko_getTableCellAt_vbuf_fallback,
+			)
+			_originalGeckoGetNearestTableCell = _patch(
+				Gecko_ia2,
+				"_getNearestTableCell",
+				_gecko_getNearestTableCell_vbuf_when_row_braille,
+			)
+			# Also repairs NVDA's own vbuf table search (used by the fallbacks above) on 2026.3+.
+			_originalGeckoIterTableCells = _patch(Gecko_ia2, "_iterTableCells", _gecko_iterTableCells_rawID)
+		if DocumentWithTableNavigation is not None:
+			_originalTableFindNewCell = _patch(
+				DocumentWithTableNavigation,
+				"_tableFindNewCell",
+				_tableFindNewCell_safe_recovery,
+			)
+	except Exception:
+		uninstall_virtual_buffer_table_braille()
+		raise
+	log.debug("Virtual buffer table row braille installed")
 
 
 def uninstall_virtual_buffer_table_braille() -> None:
-	global _installed, _originalGetBrailleRegions, _originalHandleCaretMove
 	global _originalHandleUpdate, _originalLoadBufferDone
-	if not _installed:
-		return
-	_uninstall_navigation_patches()
-	if _originalGetBrailleRegions is not None:
-		VirtualBuffer.getBrailleRegions = _originalGetBrailleRegions
-	else:
+	global _originalGeckoGetTableCellAt, _originalGeckoGetNearestTableCell, _originalTableFindNewCell
+	global _originalGeckoIterTableCells
+	while _appliedPatches:
+		owner, name, ownValue, had = _appliedPatches.pop()
 		try:
-			del VirtualBuffer.getBrailleRegions
+			if had:
+				setattr(owner, name, ownValue)
+			else:
+				delattr(owner, name)
 		except AttributeError:
-			pass
-	if _originalHandleCaretMove is not None:
-		braille.BrailleHandler.handleCaretMove = _originalHandleCaretMove
-	if _originalHandleUpdate is not None:
-		VirtualBuffer._handleUpdate = _originalHandleUpdate
-	if _originalLoadBufferDone is not None:
-		VirtualBuffer._loadBufferDone = _originalLoadBufferDone
-	_originalGetBrailleRegions = None
-	_originalHandleCaretMove = None
+			log.debugWarning("virtual buffer table braille: could not restore %s", name, exc_info=True)
 	_originalHandleUpdate = None
 	_originalLoadBufferDone = None
-	_installed = False
+	_originalGeckoGetTableCellAt = None
+	_originalGeckoGetNearestTableCell = None
+	_originalGeckoIterTableCells = None
+	_originalTableFindNewCell = None
