@@ -89,7 +89,6 @@ iniGestures = {}
 iniProfile = {}
 profileFileExists = gesturesFileExists = False
 
-noMessageTimeout = True if "noMessageTimeout" in config.conf["braille"] else False
 outputTables = inputTables = None
 if not os.path.exists(profilesDir):
 	log.error("Profiles' path not found")
@@ -562,6 +561,23 @@ def loadConf():
 	if config.conf["brailleExtender"]["inputTableShortcuts"] not in tablesUFN:
 		config.conf["brailleExtender"]["inputTableShortcuts"] = "?"
 	return True
+
+
+def keep_braille_messages_displayed():
+	"""Show braille messages until dismissed; return the setting to give back to the restore call.
+
+	NVDA's ``noMessageTimeout`` option became ``showMessages`` long before NVDA 2024.1.
+	"""
+	from config.configFlags import ShowMessages
+
+	previous = config.conf["braille"]["showMessages"]
+	config.conf["braille"]["showMessages"] = ShowMessages.SHOW_INDEFINITELY.value
+	return previous
+
+
+def restore_braille_messages_setting(previous) -> None:
+	if previous is not None:
+		config.conf["braille"]["showMessages"] = previous
 
 
 def _right_margin_cells() -> int:

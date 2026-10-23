@@ -141,7 +141,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	noKC = None
 	if not addoncfg.noUnicodeTable:
 		backupInputTable = brailleapi.get_braille_input_handler().table
-	backupMessageTimeout = None
+	backupShowMessages = None
 
 	def __init__(self):
 		startTime = time.time()
@@ -851,13 +851,8 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		if self.hourDatePlayed:
 			self.hourDateTimer.Stop()
 			self.clearMessageFlash()
-			if addoncfg.noMessageTimeout:
-				config.conf["braille"]["noMessageTimeout"] = self.backupMessageTimeout
 			_restoreMainBuffer()
 		else:
-			if addoncfg.noMessageTimeout:
-				self.backupMessageTimeout = config.conf["braille"]["noMessageTimeout"]
-				config.conf["braille"]["noMessageTimeout"] = True
 			self.showHourDate()
 			self.hourDateTimer = wx.PyTimer(self.showHourDate)
 			time.sleep(1.02 - round(time.time() - int(time.time()), 3))
@@ -1534,12 +1529,10 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			self.autoTest_charPtr = self.autoTest_cellPtr = 0
 			self.clearMessageFlash()
 			speech.speakMessage(_("Auto test stopped"))
-			if addoncfg.noMessageTimeout:
-				config.conf["braille"]["noMessageTimeout"] = self.backupMessageTimeout
+			addoncfg.restore_braille_messages_setting(self.backupShowMessages)
+			self.backupShowMessages = None
 		else:
-			if addoncfg.noMessageTimeout:
-				self.backupMessageTimeout = config.conf["braille"]["noMessageTimeout"]
-				config.conf["braille"]["noMessageTimeout"] = True
+			self.backupShowMessages = addoncfg.keep_braille_messages_displayed()
 			self.showAutoTest()
 			self.autoTestTimer = wx.PyTimer(self.showAutoTest)
 			self.bindGestures(self.autoTest_gestures)
@@ -1626,8 +1619,6 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			brailleapi.get_braille_input_handler().table = self.backupInputTable
 		if self.hourDatePlayed:
 			self.hourDateTimer.Stop()
-			if addoncfg.noMessageTimeout:
-				config.conf["braille"]["noMessageTimeout"] = self.backupMessageTimeout
 			_restoreMainBuffer()
 		if patches.is_patch_applied("braille_handler") and patches.get_auto_scroll():
 			try:
@@ -1636,6 +1627,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				pass
 		if self.autoTestPlayed:
 			self.autoTestTimer.Stop()
+			addoncfg.restore_braille_messages_setting(self.backupShowMessages)
 		tabledictionaries.remove_temporary_dictionary()
 		addoncfg.unregister_right_margin_filter()
 		advancedinput.terminate()
