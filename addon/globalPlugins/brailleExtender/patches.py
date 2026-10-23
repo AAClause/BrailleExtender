@@ -82,6 +82,7 @@ from .braille_table_chain import (
 	has_additional_output,
 )
 from .utils import (
+	log_exception_once,
 	getCharFromValue,
 	getCurrentBrailleTables,
 	getSpeechSymbols,
@@ -452,7 +453,7 @@ def _prepare_format_field_for_braille(field: dict[str, Any]) -> None:
 
 		normalizeIA2TextFormatField(field)
 	except Exception:
-		log.debugWarning("normalizeIA2TextFormatField failed", exc_info=True)
+		log_exception_once("normalizeIA2TextFormatField", "normalizeIA2TextFormatField failed")
 
 
 def _text_position_matches_bucket(raw: Any, want: str) -> bool:
@@ -519,12 +520,12 @@ def _try_append_nvda_core_formatting_markers(
 			if not marker.shouldBeUsed(key):
 				continue
 		except Exception:
-			log.debugWarning("NVDA marker shouldBeUsed failed for %s", key, exc_info=True)
+			log_exception_once("marker.shouldBeUsed", "NVDA marker shouldBeUsed failed for %s", key)
 			continue
 		try:
 			append_fn(key, marker, parts, field, fieldCache)
 		except Exception:
-			log.debugWarning("NVDA _appendFormattingMarker failed for %s", key, exc_info=True)
+			log_exception_once("appendFormattingMarker", "NVDA _appendFormattingMarker failed for %s", key)
 	if not parts:
 		# NVDA did not emit any markers; allow ``getFormatFieldBraille`` fallbacks (e.g. tags when
 		# attributes are delegated to NVDA core but markers are empty).
@@ -538,7 +539,8 @@ def _try_append_nvda_core_formatting_markers(
 			delim = brailleapi.FormatTagDelimiter
 			if delim is not None:
 				chunk = f"{delim.START}{chunk}{delim.END}"
-	except Exception:
+	except (KeyError, ImportError, AttributeError):
+		# fontFormattingDisplay and FontFormattingBrailleModeFlag exist from NVDA 2024.4.
 		pass
 	textList.append(chunk)
 	return True
@@ -588,7 +590,7 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 					if marker:
 						textList.append(marker)
 				except Exception:
-					log.debugWarning("getParagraphStartMarker failed", exc_info=True)
+					log_exception_once("getParagraphStartMarker", "getParagraphStartMarker failed")
 		if formatConfig["reportParagraphIndentation"] and use_be_format_field_chrome("paragraphIndentation"):
 			indentLabels = {
 				"left-indent": (N_("left indent"), N_("no left indent")),
@@ -628,8 +630,8 @@ def getFormatFieldBraille(field, fieldCache, isAtStart, formatConfig):
 		if collapsed:
 			try:
 				textList.append(brailleapi.positiveStateLabels[controlTypes.State.COLLAPSED])
-			except Exception:
-				log.debugWarning("collapsed state label failed", exc_info=True)
+			except KeyError:
+				log.debugWarning("no braille label for the collapsed state", exc_info=True)
 
 	if formatConfig["reportPage"] and use_be_format_field_chrome("page"):
 		pageNumber = field.get("page-number")
@@ -1601,19 +1603,19 @@ def unload_patches() -> None:
 		uninstall_excel_braille_regions()
 		uninstall_excel_header_text_guards()
 	except Exception:
-		pass
+		log.warning("could not uninstall Excel braille helpers", exc_info=True)
 	try:
 		from .virtualBufferTableBraille import uninstall_virtual_buffer_table_braille
 
 		uninstall_virtual_buffer_table_braille()
 	except Exception:
-		pass
+		log.warning("could not uninstall virtual buffer table braille", exc_info=True)
 
 	if "executeGesture" in applied:
 		try:
 			inputCore.decide_executeGesture.unregister(_executeGestureHandler)
 		except Exception:
-			pass
+			log.warning("could not unregister the gesture handler", exc_info=True)
 
 	if "braille_region" in applied:
 		try:

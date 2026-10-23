@@ -42,7 +42,8 @@ def _braille_speech_output_blocks_gain_focus(handler: Any) -> bool:
 		from config.configFlags import BrailleMode
 
 		return config.conf["braille"]["mode"] == BrailleMode.SPEECH_OUTPUT.value
-	except Exception:
+	except (ImportError, KeyError):
+		# Braille mode exists from NVDA 2024.2.
 		return False
 
 

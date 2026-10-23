@@ -47,6 +47,22 @@ get_volume_level = volumehelper.get_volume_level
 _RE_OVERVIEW_UNUSED_COMBO = re.compile(r"^\\.+/$")
 
 
+_loggedExceptionKeys: set[str] = set()
+
+
+def log_exception_once(key: str, message: str, *args) -> None:
+	"""Log the current exception as an error the first time ``key`` fails, then at debug level.
+
+	For add-on code that must keep braille working when an NVDA helper fails: the failure stays
+	visible in the default log (it usually means an NVDA API changed) without flooding it.
+	"""
+	if key in _loggedExceptionKeys:
+		log.debugWarning(message, *args, exc_info=True)
+		return
+	_loggedExceptionKeys.add(key)
+	log.exception(message, *args)
+
+
 def _resolveInputTableFileName(table_file: str) -> str:
 	"""Map config or UI value ``auto`` to a concrete input table file name."""
 	if table_file == "auto":

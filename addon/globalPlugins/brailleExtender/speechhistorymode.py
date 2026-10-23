@@ -17,6 +17,7 @@ import ui
 import wx
 from logHandler import log
 from . import brailleapi
+from .utils import log_exception_once
 
 addonHandler.initTranslation()
 
@@ -75,7 +76,7 @@ def showSpeech(index: int, allowReadEntry: bool = False) -> None:
 				speech.cancelSpeech()
 				speak_wrapped([speechList[index]], saveString=False)
 	except Exception:
-		log.debugWarning("Speech history: showSpeech failed", exc_info=True)
+		log_exception_once("speechHistory.showSpeech", "Speech history: showSpeech failed")
 
 
 def speak_wrapped(

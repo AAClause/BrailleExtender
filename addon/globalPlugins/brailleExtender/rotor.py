@@ -227,7 +227,7 @@ def _movement_next():
 			import documentBase
 
 			_Movement_NEXT = documentBase._Movement.NEXT
-		except Exception:
+		except (ImportError, AttributeError):
 			_Movement_NEXT = None
 	return _Movement_NEXT
 

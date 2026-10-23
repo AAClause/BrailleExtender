@@ -60,7 +60,7 @@ try:
 except ImportError:
 	Gecko_ia2 = None  # type: ignore[assignment,misc]
 
-from .utils import get_control_type
+from .utils import get_control_type, log_exception_once
 
 addonHandler.initTranslation()
 
@@ -1057,10 +1057,14 @@ class VirtualBufferBrailleRegion(_CursorManagerRegion):
 		if state is not None:
 			try:
 				layout = self._layoutRow(state, _cellBrailleFormatConfig())
-			except Exception:  # noqa: BLE001
+			except Exception as e:  # noqa: BLE001
 				# Drop the cache: it may hold cells of a buffer that changed under us.
 				self._rowKey = None
-				log.debugWarning("virtual buffer table braille: row update failed", exc_info=True)
+				if isinstance(e, (LookupError, *_TRANSIENT_ERRORS)):
+					# The buffer changed or died under us; the next update rebuilds the row.
+					log.debugWarning("virtual buffer table braille: row update failed", exc_info=True)
+				else:
+					log_exception_once("vbufTable.row", "virtual buffer table braille: row update failed")
 				if wasRowMode:
 					# Keep the last row rather than flashing the document line.
 					return
@@ -1283,7 +1287,7 @@ def refresh_document_formatting_braille_display() -> None:
 	try:
 		_rebuildForSettings()
 	except Exception:  # noqa: BLE001
-		log.debugWarning("virtual buffer table braille: refresh failed", exc_info=True)
+		log.exception("virtual buffer table braille: refresh failed")
 
 
 def schedule_document_formatting_braille_refresh() -> None:
@@ -1338,7 +1342,7 @@ def _deliverContentUpdate(virtualBuffer) -> None:
 	try:
 		_originalHandleUpdate(virtualBuffer)
 	except Exception:  # noqa: BLE001
-		log.debugWarning("virtual buffer table braille: deferred update failed", exc_info=True)
+		log.exception("virtual buffer table braille: deferred update failed")
 
 
 def _virtualBuffer_handleUpdate_counted(self):
