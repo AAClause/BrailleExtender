@@ -13,7 +13,6 @@ import addonHandler
 import appModuleHandler
 import api
 import braille
-import brailleInput
 import config
 import globalCommands
 import globalPluginHandler
@@ -32,6 +31,7 @@ import vision
 import wx
 from logHandler import log
 
+from . import brailleapi
 from . import addoncfg
 
 config.conf.spec["brailleExtender"] = addoncfg.getConfspec()
@@ -71,7 +71,7 @@ def _modifier_keys_script_description(key_combo: str) -> str:
 
 def _brailleMessagePersistent(msg):
 	"""Display a message in the main braille buffer so it stays visible (no timeout)."""
-	region = braille.TextRegion(msg)
+	region = brailleapi.TextRegion(msg)
 	region.obj = None
 	region.update()
 	braille.handler.mainBuffer.clear()
@@ -140,7 +140,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	rotorGES = {}
 	noKC = None
 	if not addoncfg.noUnicodeTable:
-		backupInputTable = brailleInput.handler.table
+		backupInputTable = brailleapi.get_braille_input_handler().table
 	backupMessageTimeout = None
 
 	def __init__(self):
@@ -149,12 +149,14 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		appModuleHandler.registerExecutableWithAppModule("excel", "brailleExtenderExcel")
 		patches.instanceGP = self
 		patches.apply_patches()
-		braille.TextInfoRegion._addTextWithFields = documentformatting.decorator(
-			braille.TextInfoRegion._addTextWithFields, "addTextWithFields"
+		brailleapi.TextInfoRegion._addTextWithFields = documentformatting.decorator(
+			brailleapi.TextInfoRegion._addTextWithFields, "addTextWithFields"
 		)
-		braille.TextInfoRegion.update = documentformatting.decorator(braille.TextInfoRegion.update, "update")
-		braille.TextInfoRegion._getTypeformFromFormatField = documentformatting.decorator(
-			braille.TextInfoRegion._getTypeformFromFormatField, "_getTypeformFromFormatField"
+		brailleapi.TextInfoRegion.update = documentformatting.decorator(
+			brailleapi.TextInfoRegion.update, "update"
+		)
+		brailleapi.TextInfoRegion._getTypeformFromFormatField = documentformatting.decorator(
+			brailleapi.TextInfoRegion._getTypeformFromFormatField, "_getTypeformFromFormatField"
 		)
 		settings.instanceGP = self
 		addoncfg.loadConf()
@@ -741,15 +743,17 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	@script(description=_("Open a browseable list of dot patterns for the current Liblouis input table"))
 	def script_getTableOverview(self, gesture):
-		inTable = brailleInput.handler.table.displayName
+		inTable = brailleapi.get_braille_input_handler().table.displayName
 		ouTable = addoncfg.tablesTR[addoncfg.tablesFN.index(utils.getTranslationTable())]
 		t = (_(" Input table") + ": %s\n" + _("Output table") + ": %s\n\n") % (
-			inTable + " (%s)" % (brailleInput.handler.table.fileName),
+			inTable + " (%s)" % (brailleapi.get_braille_input_handler().table.fileName),
 			ouTable + " (%s)" % (utils.getTranslationTable()),
 		)
 		t += utils.getTableOverview()
 		ui.browseableMessage(
-			"<pre>%s</pre>" % t, _("Table overview (%s)") % brailleInput.handler.table.displayName, True
+			"<pre>%s</pre>" % t,
+			_("Table overview (%s)") % brailleapi.get_braille_input_handler().table.displayName,
+			True,
 		)
 
 	@script(
@@ -1179,13 +1183,13 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	def clearModifiers(self, forced=False):
 		if self.modifiersLocked and not forced:
 			return
-		brailleInput.handler.currentModifiers.clear()
+		brailleapi.get_braille_input_handler().currentModifiers.clear()
 
 	def sendComb(self, sht, gesture=None):
 		inputCore.manager.emulateGesture(keyboardHandler.KeyboardInputGesture.fromName(sht))
 
 	def getActualModifiers(self, short=True):
-		modifiers = brailleInput.handler.currentModifiers
+		modifiers = brailleapi.get_braille_input_handler().currentModifiers
 		if len(modifiers) == 0:
 			return self.script_cancelShortcut(None)
 		s = ""
@@ -1208,7 +1212,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	def toggleModifier(self, modifier, beep=True):
 		if modifier.lower() not in ["alt", "control", "nvda", "shift", "windows"]:
 			return
-		modifiers = brailleInput.handler.currentModifiers
+		modifiers = brailleapi.get_braille_input_handler().currentModifiers
 		if modifier not in modifiers:
 			modifiers.add(modifier)
 			if beep and config.conf["brailleExtender"]["beepsModifiers"]:
@@ -1619,7 +1623,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		self.removeMenu()
 		rolelabels.discardRoleLabels()
 		if addoncfg.noUnicodeTable:
-			brailleInput.handler.table = self.backupInputTable
+			brailleapi.get_braille_input_handler().table = self.backupInputTable
 		if self.hourDatePlayed:
 			self.hourDateTimer.Stop()
 			if addoncfg.noMessageTimeout:
@@ -1633,6 +1637,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		if self.autoTestPlayed:
 			self.autoTestTimer.Stop()
 		tabledictionaries.remove_temporary_dictionary()
+		addoncfg.unregister_right_margin_filter()
 		advancedinput.terminate()
 		patches.unload_patches()
 		super().terminate()

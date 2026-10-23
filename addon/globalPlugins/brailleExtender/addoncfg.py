@@ -13,6 +13,7 @@ import configobj
 import globalVars
 import inputCore
 from logHandler import log
+from . import brailleapi
 from .common import (
 	addonUpdateChannel,
 	configDir,
@@ -83,7 +84,6 @@ routingCursorsEditFields_labels = {
 	RC_EMULATE_ARROWS_SILENT: _("alternative, emulate left and right arrow keys silently"),
 }
 curBD = braille.handler.display.name
-backupDisplaySize = braille.handler.displaySize
 
 iniGestures = {}
 iniProfile = {}
@@ -119,7 +119,7 @@ def refresh_braille_tables_cache() -> None:
 
 
 def getValidBrailleDisplayPrefered():
-	displays = braille.getDisplayList()
+	displays = brailleapi.getDisplayList()
 	displays.append(("last", _("last known")))
 	return displays
 
@@ -558,12 +558,55 @@ def loadConf():
 		else:
 			log.debug("No braille display present")
 
-	limitCellsRight = int(config.conf["brailleExtender"]["rightMarginCells_%s" % curBD])
-	if backupDisplaySize - limitCellsRight <= backupDisplaySize and limitCellsRight > 0:
-		braille.handler.displaySize = backupDisplaySize - limitCellsRight
+	register_right_margin_filter()
 	if config.conf["brailleExtender"]["inputTableShortcuts"] not in tablesUFN:
 		config.conf["brailleExtender"]["inputTableShortcuts"] = "?"
 	return True
+
+
+def _right_margin_cells() -> int:
+	try:
+		return max(0, int(config.conf["brailleExtender"]["rightMarginCells_%s" % curBD]))
+	except (KeyError, TypeError, ValueError):
+		return 0
+
+
+def _filter_display_dimensions_right_margin(value):
+	"""Hide the configured right margin (NVDA 2025.1+, ``filter_displayDimensions``)."""
+	margin = _right_margin_cells()
+	if margin <= 0 or value.numCols <= margin:
+		return value
+	return value._replace(numCols=value.numCols - margin)
+
+
+def _filter_display_size_right_margin(value: int) -> int:
+	"""Hide the configured right margin (NVDA before 2025.1, ``filter_displaySize``)."""
+	margin = _right_margin_cells()
+	if margin <= 0 or value <= margin:
+		return value
+	return value - margin
+
+
+def _right_margin_filter():
+	"""The NVDA filter point and handler to use; ``displaySize`` itself is read-only."""
+	if brailleapi.filter_displayDimensions is not None:
+		return brailleapi.filter_displayDimensions, _filter_display_dimensions_right_margin
+	return brailleapi.filter_displaySize, _filter_display_size_right_margin
+
+
+def register_right_margin_filter() -> None:
+	"""Apply ``rightMarginCells_<display>``; the handler reads the setting on each call."""
+	filterPoint, handler = _right_margin_filter()
+	if filterPoint is None:
+		return
+	filterPoint.unregister(handler)
+	filterPoint.register(handler)
+
+
+def unregister_right_margin_filter() -> None:
+	filterPoint, handler = _right_margin_filter()
+	if filterPoint is not None:
+		filterPoint.unregister(handler)
 
 
 def loadGestures():

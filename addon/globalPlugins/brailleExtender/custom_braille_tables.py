@@ -12,12 +12,12 @@ from typing import Any
 
 import addonHandler
 import braille
-import brailleInput
 import brailleTables
 import config
 import globalVars
 from logHandler import log
 
+from . import brailleapi
 from .common import (
 	NVDA_HAS_AUTOMATIC_BRAILLE_TABLES,
 	NVDA_HAS_CUSTOM_BRAILLE_TABLES,
@@ -581,7 +581,7 @@ def _remove_from_braille_extender_table_list(config_key: str, file_name: str) ->
 def _input_uses_table(file_name: str) -> bool:
 	if get_effective_input_table_id() == file_name:
 		return True
-	handler = brailleInput.handler
+	handler = brailleapi.get_braille_input_handler()
 	return bool(handler and handler.table.fileName == file_name)
 
 

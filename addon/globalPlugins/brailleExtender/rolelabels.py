@@ -9,11 +9,11 @@ import gui
 import wx
 
 import addonHandler
-import braille
 import config
 import controlTypes
 import languageHandler
 
+from . import brailleapi
 from .common import configDir
 
 addonHandler.initTranslation()
@@ -45,7 +45,7 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 
 		choices = []
 		if hasattr(controlTypes, "roleLabels"):
-			choices = [controlTypes.roleLabels[int(k)] for k in braille.roleLabels.keys()]
+			choices = [controlTypes.roleLabels[int(k)] for k in brailleapi.roleLabels.keys()]
 
 		self.labels = sHelper.addLabeledControl(_("&Role:"), wx.Choice, choices=choices)
 		self.labels.Bind(wx.EVT_CHOICE, self.onLabels)
@@ -86,21 +86,21 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		oldRoleLabels = hasattr(controlTypes, "roleLabels")
 		if idCategory == 0:
 			if oldRoleLabels:
-				labels = [controlTypes.roleLabels[int(k)] for k in braille.roleLabels.keys()]
+				labels = [controlTypes.roleLabels[int(k)] for k in brailleapi.roleLabels.keys()]
 			else:
-				labels = [role.displayString for role in braille.roleLabels.keys()]
+				labels = [role.displayString for role in brailleapi.roleLabels.keys()]
 		elif idCategory == 1:
-			labels = list(braille.landmarkLabels.keys())
+			labels = list(brailleapi.landmarkLabels.keys())
 		elif idCategory == 2:
 			if oldRoleLabels:
-				labels = [controlTypes.stateLabels[k] for k in braille.positiveStateLabels.keys()]
+				labels = [controlTypes.stateLabels[k] for k in brailleapi.positiveStateLabels.keys()]
 			else:
-				labels = [role.displayString for role in braille.positiveStateLabels.keys()]
+				labels = [role.displayString for role in brailleapi.positiveStateLabels.keys()]
 		elif idCategory == 3:
 			if oldRoleLabels:
-				labels = [controlTypes.stateLabels[k] for k in braille.negativeStateLabels.keys()]
+				labels = [controlTypes.stateLabels[k] for k in brailleapi.negativeStateLabels.keys()]
 			else:
-				labels = [role.displayString for role in braille.negativeStateLabels.keys()]
+				labels = [role.displayString for role in brailleapi.negativeStateLabels.keys()]
 		for iLabel, label in enumerate(labels):
 			idLabel = getIDFromIndexes(idCategory, iLabel)
 			actualLabel = getLabelFromID(idCategory, idLabel)
@@ -197,13 +197,13 @@ def getIDFromIndexes(idCategory, idLabel):
 		raise TypeError(f"Wrong type for idLabel ({idLabel})")
 	idRole = -1
 	if idCategory == 0:
-		idRole = list(braille.roleLabels.keys())[idLabel]
+		idRole = list(brailleapi.roleLabels.keys())[idLabel]
 	elif idCategory == 1:
-		idRole = list(braille.landmarkLabels.keys())[idLabel]
+		idRole = list(brailleapi.landmarkLabels.keys())[idLabel]
 	elif idCategory == 2:
-		idRole = list(braille.positiveStateLabels.keys())[idLabel]
+		idRole = list(brailleapi.positiveStateLabels.keys())[idLabel]
 	elif idCategory == 3:
-		idRole = list(braille.negativeStateLabels.keys())[idLabel]
+		idRole = list(brailleapi.negativeStateLabels.keys())[idLabel]
 	else:
 		raise ValueError(f"Wrong value for category ({idCategory})")
 	if not oldRoleLabels and isinstance(idRole, (controlTypes.Role, controlTypes.State)):
@@ -213,25 +213,25 @@ def getIDFromIndexes(idCategory, idLabel):
 
 def getLabelFromID(idCategory, idLabel):
 	if idCategory == 0:
-		return braille.roleLabels[int(idLabel)]
+		return brailleapi.roleLabels[int(idLabel)]
 	if idCategory == 1:
-		return braille.landmarkLabels[idLabel]
+		return brailleapi.landmarkLabels[idLabel]
 	if idCategory == 2:
-		return braille.positiveStateLabels[int(idLabel)]
+		return brailleapi.positiveStateLabels[int(idLabel)]
 	if idCategory == 3:
-		return braille.negativeStateLabels[int(idLabel)]
+		return brailleapi.negativeStateLabels[int(idLabel)]
 	raise ValueError("Invalid value: %d" % idCategory)
 
 
 def setLabelFromID(idCategory, idLabel, newLabel):
 	if idCategory == 0:
-		braille.roleLabels[int(idLabel)] = newLabel
+		brailleapi.roleLabels[int(idLabel)] = newLabel
 	elif idCategory == 1:
-		braille.landmarkLabels[idLabel] = newLabel
+		brailleapi.landmarkLabels[idLabel] = newLabel
 	elif idCategory == 2:
-		braille.positiveStateLabels[int(idLabel)] = newLabel
+		brailleapi.positiveStateLabels[int(idLabel)] = newLabel
 	elif idCategory == 3:
-		braille.negativeStateLabels[int(idLabel)] = newLabel
+		brailleapi.negativeStateLabels[int(idLabel)] = newLabel
 	else:
 		raise ValueError(f"Unknown category {idCategory}")
 

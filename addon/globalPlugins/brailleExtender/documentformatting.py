@@ -17,7 +17,7 @@ import ui
 import wx
 from logHandler import log
 
-from . import regionhelper
+from . import brailleapi, regionhelper
 from .common import (
 	N_,
 	BRLEX_CELL_MASK_BY_METHOD,
@@ -412,7 +412,7 @@ def decorator(fn, s):
 		semantic_highlight_delegated_to_nvda = report_row_follows_nvda("highlight") and bool(
 			formatConfig.get("reportHighlight", False)
 		)
-		nvda_format_markers = getattr(braille, "fontAttributeFormattingMarkers", None) or {}
+		nvda_format_markers = brailleapi.fontAttributeFormattingMarkers or {}
 		louis_typeform_flags = louis.plain_text
 		extra_dots_cell_mask = 0
 		for attr_name in _FORMAT_CHANGE_TYPEFORM_ATTRS:

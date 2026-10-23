@@ -19,8 +19,7 @@ Design rules (robustness and speed):
   come from the same field list). Cell coordinates and cell braille text are cached per row and
   invalidated whenever the buffer content changes, so moving inside a row only re-renders the cell
   holding the caret. Content-driven row refreshes are coalesced.
-* NVDA 2026.3 moved most braille symbols out of the ``braille`` namespace (old accesses log a
-  warning with a stack trace); they are resolved once at import from their current location.
+* Braille symbols come from :mod:`brailleapi`, resolved once for NVDA 2024.1 through 2027.x.
 
 Hooks: ``VirtualBuffer.getBrailleRegions``, content-change counters on ``VirtualBuffer`` and Gecko
 table-navigation fallbacks. All are undone by :func:`uninstall_virtual_buffer_table_braille`.
@@ -28,7 +27,6 @@ table-navigation fallbacks. All are undone by :func:`uninstall_virtual_buffer_ta
 
 from __future__ import annotations
 
-import importlib
 from collections.abc import Iterable
 from typing import Any, Literal, NamedTuple
 
@@ -44,7 +42,7 @@ from config.configFlags import ReportTableHeaders, TetherTo
 from logHandler import log
 from virtualBuffers import VirtualBuffer
 
-from . import regionhelper
+from . import brailleapi, regionhelper
 from .documentformatting import build_text_with_fields_format_config
 
 try:
@@ -67,36 +65,14 @@ from .utils import get_control_type
 addonHandler.initTranslation()
 
 
-def _braille_symbol(name: str, *newModules: str, required: bool = True):
-	"""Fetch a braille symbol from where NVDA 2026.3+ defines it, else from ``braille``.
-
-	NVDA 2026.3 moved these symbols out of the ``braille`` package namespace; accessing them
-	through ``braille`` still works but logs a warning with a stack trace on every access, which
-	is far too costly on the per-update code paths of this module. Resolve each once, here.
-	"""
-	for moduleName in newModules:
-		try:
-			module = importlib.import_module(moduleName)
-		except ImportError:
-			continue
-		if name in vars(module):
-			return vars(module)[name]
-	if required:
-		return getattr(braille, name)
-	return getattr(braille, name, None)
-
-
-_Region = _braille_symbol("Region", "braille.regions.base")
-_TextInfoRegion = _braille_symbol("TextInfoRegion", "braille.regions.textInfo")
-_CursorManagerRegion = _braille_symbol("CursorManagerRegion", "braille.regions.textInfo")
-_NVDAObjectRegion = _braille_symbol("NVDAObjectRegion", "braille.regions.NVDAObject")
-_roleLabels = _braille_symbol("roleLabels", "braille.labels")
-TEXT_SEPARATOR = _braille_symbol("TEXT_SEPARATOR", "braille.constants")
-# Private helpers, available from NVDA 2025.1 only.
-_speakOnRouting = _braille_symbol("_speakOnRouting", "braille.regions.textInfo", required=False)
-_speakOnNavigatingByUnit = _braille_symbol(
-	"_speakOnNavigatingByUnit", "braille.regions.textInfo", required=False
-)
+_Region = brailleapi.Region
+_TextInfoRegion = brailleapi.TextInfoRegion
+_CursorManagerRegion = brailleapi.CursorManagerRegion
+_NVDAObjectRegion = brailleapi.NVDAObjectRegion
+_roleLabels = brailleapi.roleLabels
+TEXT_SEPARATOR = brailleapi.TEXT_SEPARATOR
+# Private NVDA helper (2024.4+); on older NVDA, Braille Extender's routing script speaks instead.
+_speakOnRouting = brailleapi.resolve_symbol("_speakOnRouting", "braille.regions.textInfo")
 
 ROW_CELL_SEPARATOR = " | "
 ROW_LINE_START = "(| "
@@ -700,14 +676,15 @@ def _readTableStateAt(info: textInfos.TextInfo):
 	return _tableStateFromFields(fields)
 
 
-def _speakOnNavigate(virtualBuffer) -> None:
-	speak = _speakOnNavigatingByUnit
-	if speak is None:
-		return
-	try:
-		speak(virtualBuffer.selection, textInfos.UNIT_LINE)
-	except (AttributeError, RuntimeError):
-		pass
+def _speakOnNavigate() -> None:
+	"""Speak after moving by row, like Braille Extender's line scrolling (``speakScroll`` setting).
+
+	Uses the add-on's own mechanism, as its ``TextInfoRegion.nextLine``/``previousLine`` patches
+	do, so row and line navigation behave the same on every NVDA version.
+	"""
+	from .patches import _queue_braille_scroll_line_speech
+
+	_queue_braille_scroll_line_speech()
 
 
 def _notifyBrailleCaretMoved(virtualBuffer) -> None:
@@ -769,7 +746,7 @@ def _moveToAdjacentTableRow(virtualBuffer, *, forward: bool) -> bool:
 	target.collapse()
 	if not _setBrowseCaret(virtualBuffer, target):
 		return False
-	_speakOnNavigate(virtualBuffer)
+	_speakOnNavigate()
 	return True
 
 
@@ -782,7 +759,7 @@ def _leaveVirtualBufferTableForward(virtualBuffer, *, tableID, tableRow: int) ->
 		return False
 	if dest is None or not _setBrowseCaret(virtualBuffer, dest):
 		return False
-	_speakOnNavigate(virtualBuffer)
+	_speakOnNavigate()
 	return True
 
 

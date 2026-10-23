@@ -11,7 +11,6 @@ import re
 import addonHandler
 import api
 import braille
-import brailleInput
 import brailleTables
 import characterProcessing
 import config
@@ -28,6 +27,7 @@ from logHandler import log
 addonHandler.initTranslation()
 import treeInterceptorHandler
 import unicodedata
+from . import brailleapi
 from .common import (
 	INSERT_AFTER,
 	INSERT_BEFORE,
@@ -105,8 +105,8 @@ def make_progress_bar_from_str(percentage, text, method, positive="⢼", negativ
 
 def getEffectiveInputTableFileName() -> str:
 	"""Return the liblouis input table file name (never the config value ``auto``)."""
-	if brailleInput.handler is not None:
-		return brailleInput.handler.table.fileName
+	if brailleapi.get_braille_input_handler() is not None:
+		return brailleapi.get_braille_input_handler().table.fileName
 	return _resolveInputTableFileName(config.conf["braille"]["inputTable"])
 
 
@@ -502,8 +502,8 @@ def apply_braille_input_table(table_id: str) -> None:
 		)
 		table_id = "auto"
 	if table_id == "auto":
-		if brailleInput.handler:
-			brailleInput.handler._table = brailleTables.getTable(default_file)
+		if brailleapi.get_braille_input_handler():
+			brailleapi.get_braille_input_handler()._table = brailleTables.getTable(default_file)
 		persist_input_table_selection("auto")
 		return
 	try:
@@ -511,8 +511,8 @@ def apply_braille_input_table(table_id: str) -> None:
 	except LookupError:
 		table = brailleTables.getTable(default_file)
 		table_id = table.fileName
-	if brailleInput.handler:
-		brailleInput.handler._table = table
+	if brailleapi.get_braille_input_handler():
+		brailleapi.get_braille_input_handler()._table = table
 	persist_input_table_selection(table_id)
 
 

@@ -9,13 +9,13 @@ from copy import deepcopy
 from logHandler import log
 
 import addonHandler
-import brailleInput
 import brailleTables
 import config
 import gui
 import ui
 import wx
 
+from . import brailleapi
 from .common import configDir, addonName
 from .utils import getTextInBraille
 
@@ -165,7 +165,7 @@ def saveDict(dictToSave, fp=None):
 def getReplacements(abreviations, strict=False):
 	if isinstance(abreviations, str):
 		abreviations = [abreviations]
-	currentInputTable = brailleInput.handler.table.fileName
+	currentInputTable = brailleapi.get_braille_input_handler().table.fileName
 	out = []
 	for abreviation in abreviations:
 		if abreviation.endswith("⠀"):
