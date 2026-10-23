@@ -10,7 +10,7 @@ import re
 import struct
 import sys
 import time
-from typing import Any, Optional
+from typing import Any
 
 import addonHandler
 import api
@@ -88,7 +88,6 @@ from .utils import (
 	getTether,
 	get_control_type,
 	get_output_reason,
-	is_braille_unicode_normalization_enabled,
 )
 
 addonHandler.initTranslation()
@@ -113,6 +112,7 @@ def _saveOriginals():
 	o["getControlFieldBraille"] = brailleapi.getControlFieldBraille
 	o["getFormatFieldBraille"] = brailleapi.getFormatFieldBraille
 	o["Region.update"] = brailleapi.Region.update
+	o["louisHelper.translate"] = louisHelper.translate
 	o["TextInfoRegion._addTextWithFields"] = brailleapi.TextInfoRegion._addTextWithFields
 	o["TextInfoRegion.update"] = brailleapi.TextInfoRegion.update
 	o["TextInfoRegion.previousLine"] = brailleapi.TextInfoRegion.previousLine
@@ -266,61 +266,60 @@ def script_braille_routeTo(self, gesture):
 	say_character_under_braille_routing_cursor(gesture)
 
 
-def update_region(self) -> None:
-	"""Translate L{rawText} to braille cells (mirrors NVDA Region.update, plus add-on hooks).
+def _strip_variation_selectors(region) -> None:
+	"""Drop emoji variation selectors from ``rawText`` and shift cursor/selection accordingly."""
+	pattern = _VARIATION_SELECTOR_SUFFIX_RE
+	positions_to_remove: list[int] = []
+	for match in pattern.finditer(region.rawText):
+		positions_to_remove.extend(range(match.start() + 1, match.end()))
+	if not positions_to_remove:
+		return
+	region.rawText = pattern.sub(r"", region.rawText)
+	# Keep the per-character lists aligned with the shortened text.
+	removed = set(positions_to_remove)
+	for attr in ("rawTextTypeforms", "_rawToContentPos"):
+		values = getattr(region, attr, None)
+		if isinstance(values, list) and values:
+			setattr(region, attr, [v for i, v in enumerate(values) if i not in removed])
+	masks = getattr(region, "brlex_typeforms", None)
+	if masks:
+		region.brlex_typeforms = {
+			pos - sum(1 for p in positions_to_remove if p < pos): mask
+			for pos, mask in masks.items()
+			if pos not in removed
+		}
+	if isinstance(region.cursorPos, int):
+		region.cursorPos -= sum(1 for p in positions_to_remove if p <= region.cursorPos)
+	if isinstance(region.selectionStart, int):
+		region.selectionStart -= sum(1 for p in positions_to_remove if p <= region.selectionStart)
+	if isinstance(region.selectionEnd, int):
+		region.selectionEnd -= sum(1 for p in positions_to_remove if p <= region.selectionEnd)
 
-	Includes Unicode normalization when enabled in NVDA braille settings, so liblouis and
-	undefined-character replacement stay aligned with raw text indices.
-	"""
-	if config.conf["brailleExtender"]["advanced"]["fixCursorPositions"]:
-		pattern = _VARIATION_SELECTOR_SUFFIX_RE
-		matches = list(pattern.finditer(self.rawText))
-		positions_to_remove: list[int] = []
-		for match in matches:
-			positions_to_remove.extend(range(match.start() + 1, match.end()))
-		self.rawText = pattern.sub(r"\1", self.rawText)
-		if isinstance(self.cursorPos, int):
-			self.cursorPos -= sum(1 for p in positions_to_remove if p <= self.cursorPos)
-		if isinstance(self.selectionStart, int):
-			self.selectionStart -= sum(1 for p in positions_to_remove if p <= self.selectionStart)
-		if isinstance(self.selectionEnd, int):
-			self.selectionEnd -= sum(1 for p in positions_to_remove if p <= self.selectionEnd)
-	mode = louis.dotsIO
-	if config.conf["braille"]["expandAtCursor"] and self.cursorPos is not None:
-		mode |= louis.compbrlAtCursor
 
-	converter: Any = None
-	text_to_translate = self.rawText
-	text_typeforms = self.rawTextTypeforms
-	translate_cursor: Optional[int] = self.cursorPos
-	if is_braille_unicode_normalization_enabled():
-		try:
-			from textUtils import UnicodeNormalizationOffsetConverter, isUnicodeNormalized
-		except ImportError:
-			isUnicodeNormalized = None  # type: ignore[assignment]
-		else:
-			if isUnicodeNormalized is not None and not isUnicodeNormalized(text_to_translate):
-				converter = UnicodeNormalizationOffsetConverter(text_to_translate)
-				text_to_translate = converter.encoded
-				if text_typeforms is not None:
-					text_typeforms = [
-						text_typeforms[str_offset] for str_offset in converter.computedEncodedToStrOffsets
-					]
-				if translate_cursor is not None:
-					translate_cursor = converter.strToEncodedOffsets(translate_cursor)
-
-	brf_mode = bool(instanceGP and instanceGP.BRFMode)
-	table_list = get_liblouis_table_chain(brf=brf_mode)
+def _is_nvda_region_table_list(table_list) -> bool:
+	"""True for the table list NVDA's ``Region.update`` translates with (all supported versions)."""
+	handler = braille.handler
+	if handler is None:
+		return False
 	try:
-		self.brailleCells, braille_to_raw_pos, raw_to_braille_pos, self.brailleCursorPos = (
-			louisHelper.translate(
-				table_list,
-				text_to_translate,
-				typeform=text_typeforms,
-				mode=mode,
-				cursorPos=translate_cursor,
-			)
-		)
+		return list(table_list) == [handler.table.fileName, "braille-patterns.cti"]
+	except (AttributeError, TypeError):
+		return False
+
+
+def translate_with_addon_tables(table_list, inbuf, *args, **kwargs):
+	"""``louisHelper.translate`` replacement: region text uses the add-on's table chain.
+
+	NVDA's ``Region.update`` is the only NVDA caller and always passes the current output table
+	plus ``braille-patterns.cti``; that list is replaced by the add-on chain (preferred tables,
+	BRF, optional additional output pass). Any other caller is passed through unchanged.
+	"""
+	translate = _originals["louisHelper.translate"]
+	if not _is_nvda_region_table_list(table_list):
+		return translate(table_list, inbuf, *args, **kwargs)
+	brf_mode = bool(instanceGP and instanceGP.BRFMode)
+	try:
+		return translate(get_liblouis_table_chain(brf=brf_mode), inbuf, *args, **kwargs)
 	except Exception:
 		if not has_additional_output():
 			raise
@@ -329,50 +328,61 @@ def update_region(self) -> None:
 			exc_info=True,
 		)
 		disable_additional_output_for_session()
-		self.brailleCells, braille_to_raw_pos, raw_to_braille_pos, self.brailleCursorPos = (
-			louisHelper.translate(
-				get_liblouis_table_chain(brf=brf_mode),
-				text_to_translate,
-				typeform=text_typeforms,
-				mode=mode,
-				cursorPos=translate_cursor,
-			)
-		)
-	if converter is not None:
-		braille_to_raw_pos = [converter.encodedToStrOffsets(i) for i in braille_to_raw_pos]
-		raw_to_braille_pos = [raw_to_braille_pos[i] for i in converter.computedStrToEncodedOffsets]
-	self.brailleToRawPos = braille_to_raw_pos
-	self.rawToBraillePos = raw_to_braille_pos
+		return translate(get_liblouis_table_chain(brf=brf_mode), inbuf, *args, **kwargs)
+
+
+def _mark_selected_element(region) -> None:
+	selected_mode = config.conf["brailleExtender"]["objectPresentation"]["selectedElement"]
+	add_dots = BRLEX_CELL_MASK_BY_METHOD.get(selected_mode, 0)
+	obj = getattr(region, "obj", None)
+	if not (
+		add_dots
+		and obj
+		and getattr(obj, "states", None)
+		and obj.name
+		and get_control_type("STATE_SELECTED") in obj.states
+	):
+		return
+	name = obj.name
+	if config.conf["brailleExtender"]["advanced"]["fixCursorPositions"]:
+		name = _VARIATION_SELECTOR_SUFFIX_RE.sub(r"", name)
+	if name not in region.rawText:
+		return
+	start = region.rawText.index(name)
+	end = start + len(name) - 1
+	start_braille_pos, _ = regionhelper.getBraillePosFromRawPos(region, start)
+	_, end_braille_pos = regionhelper.getBraillePosFromRawPos(region, end)
+	region.brailleCells = [
+		cell | add_dots if start_braille_pos <= pos <= end_braille_pos else cell
+		for pos, cell in enumerate(region.brailleCells)
+	]
+
+
+def update_region(self) -> None:
+	"""NVDA's ``Region.update`` plus the add-on's pre- and post-processing.
+
+	Translation itself (table chain through :func:`translate_with_addon_tables`, Unicode
+	normalization, Chinese word segmentation, cursor expansion...) is left to NVDA, so the add-on
+	follows NVDA's behaviour on every version. The selection is marked here, after the
+	undefined-character processing, which can change the cell layout.
+	"""
+	if config.conf["brailleExtender"]["advanced"]["fixCursorPositions"]:
+		_strip_variation_selectors(self)
+	selection = (self.selectionStart, self.selectionEnd)
+	self.selectionStart = self.selectionEnd = None
+	try:
+		_originals["Region.update"](self)
+	finally:
+		self.selectionStart, self.selectionEnd = selection
 
 	if undefinedchars.should_apply_undefined_char_processing(self):
 		undefinedchars.undefinedCharProcess(self)
 	if selectedElementEnabled():
-		selected_mode = config.conf["brailleExtender"]["objectPresentation"]["selectedElement"]
-		add_dots = BRLEX_CELL_MASK_BY_METHOD.get(selected_mode, 0)
-		if (
-			add_dots
-			and hasattr(self, "obj")
-			and self.obj
-			and getattr(self.obj, "states", None)
-			and self.obj.name
-			and get_control_type("STATE_SELECTED") in self.obj.states
-		):
-			name = self.obj.name
-			if config.conf["brailleExtender"]["advanced"]["fixCursorPositions"]:
-				name = _VARIATION_SELECTOR_SUFFIX_RE.sub(r"\1", name)
-			if name in self.rawText:
-				start = self.rawText.index(name)
-				end = start + len(name) - 1
-				start_braille_pos, _ = regionhelper.getBraillePosFromRawPos(self, start)
-				_, end_braille_pos = regionhelper.getBraillePosFromRawPos(self, end)
-				self.brailleCells = [
-					cell | add_dots if start_braille_pos <= pos <= end_braille_pos else cell
-					for pos, cell in enumerate(self.brailleCells)
-				]
+		_mark_selected_element(self)
 	if (
 		self.selectionStart is not None
 		and self.selectionEnd is not None
-		and config.conf["braille"].get("showSelection", True)
+		and config.conf["braille"]["showSelection"]
 	):
 		selection_shape = _selection_shape_bitmask()
 		try:
@@ -385,107 +395,15 @@ def update_region(self) -> None:
 				self.brailleCells[pos] |= selection_shape
 		except IndexError:
 			pass
-	else:
-		if instanceGP and instanceGP.hideDots78:
-			self.brailleCells = [(cell & 63) for cell in self.brailleCells]
+	elif instanceGP and instanceGP.hideDots78:
+		self.brailleCells = [(cell & 63) for cell in self.brailleCells]
 
 
 def update_TextInfoRegion(self):
-	formatConfig = config.conf["documentFormatting"]
-	unit = self._getReadingUnit()
-	self.rawText = ""
-	self.rawTextTypeforms = []
+	"""NVDA's ``TextInfoRegion.update``, with the add-on's per-update typeform masks reset first."""
 	self.brlex_typeforms = {}
 	self._len_brlex_typeforms = 0
-	self.cursorPos = None
-	# The output includes text representing fields which isn't part of the real content in the control.
-	# Therefore, maintain a map of positions in the output to positions in the content.
-	self._rawToContentPos = []
-	self._currentContentPos = 0
-	self.selectionStart = self.selectionEnd = None
-	self._isFormatFieldAtStart = True
-	self._skipFieldsNotAtStartOfNode = False
-	self._endsWithField = False
-
-	# Selection has priority over cursor.
-	# HACK: Some TextInfos only support UNIT_LINE properly if they are based on POSITION_CARET,
-	# and copying the TextInfo breaks this ability.
-	# So use the original TextInfo for line and a copy for cursor/selection.
-	self._readingInfo = readingInfo = self._getSelection()
-	sel = readingInfo.copy()
-	if not sel.isCollapsed:
-		# There is a selection.
-		if self.obj.isTextSelectionAnchoredAtStart:
-			# The end of the range is exclusive, so make it inclusive first.
-			readingInfo.move(textInfos.UNIT_CHARACTER, -1, "end")
-		# Collapse the selection to the unanchored end.
-		readingInfo.collapse(end=self.obj.isTextSelectionAnchoredAtStart)
-		# Get the reading unit at the selection.
-		readingInfo.expand(unit)
-		# Restrict the selection to the reading unit.
-		if sel.compareEndPoints(readingInfo, "startToStart") < 0:
-			sel.setEndPoint(readingInfo, "startToStart")
-		if sel.compareEndPoints(readingInfo, "endToEnd") > 0:
-			sel.setEndPoint(readingInfo, "endToEnd")
-	else:
-		# There is a cursor.
-		# Get the reading unit at the cursor.
-		readingInfo.expand(unit)
-
-	# Not all text APIs support offsets, so we can't always get the offset of the selection relative to the start of the reading unit.
-	# Therefore, grab the reading unit in three parts.
-	# First, the chunk from the start of the reading unit to the start of the selection.
-	chunk = readingInfo.copy()
-	chunk.collapse()
-	chunk.setEndPoint(sel, "endToStart")
-	self._addTextWithFields(chunk, formatConfig)
-	# If the user is entering braille, place any untranslated braille before the selection.
-	text = brailleapi.get_braille_input_handler().untranslatedBraille
-	if text:
-		rawInputIndStart = len(self.rawText)
-		# _addFieldText adds text to self.rawText and updates other state accordingly.
-		self._addFieldText(brailleapi.INPUT_START_IND + text + brailleapi.INPUT_END_IND, None, separate=False)
-		rawInputIndEnd = len(self.rawText)
-	else:
-		rawInputIndStart = None
-	# Now, the selection itself.
-	self._addTextWithFields(sel, formatConfig, isSelection=True)
-	# Finally, get the chunk from the end of the selection to the end of the reading unit.
-	chunk.setEndPoint(readingInfo, "endToEnd")
-	chunk.setEndPoint(sel, "startToEnd")
-	self._addTextWithFields(chunk, formatConfig)
-
-	# Strip line ending characters.
-	self.rawText = self.rawText.rstrip("\r\n\0\v\f")
-	rawTextLen = len(self.rawText)
-	if rawTextLen < len(self._rawToContentPos):
-		self._currentContentPos = self._rawToContentPos[rawTextLen]
-		del self.rawTextTypeforms[rawTextLen:]
-	if rawTextLen == 0 or not self._endsWithField:
-		self.rawText += brailleapi.TEXT_SEPARATOR
-		rawTextLen += 1
-		self.rawTextTypeforms.append(louis.plain_text)
-		self._rawToContentPos.append(self._currentContentPos)
-	if self.cursorPos is not None and self.cursorPos >= rawTextLen:
-		self.cursorPos = rawTextLen - 1
-	# If this is not the start of the object, hide all previous regions.
-	start = readingInfo.obj.makeTextInfo(textInfos.POSITION_FIRST)
-	self.hidePreviousRegions = start.compareEndPoints(readingInfo, "startToStart") < 0
-	if not self.focusToHardLeft:
-		self.focusToHardLeft = self._isMultiline()
-	super(brailleapi.TextInfoRegion, self).update()
-
-	if rawInputIndStart is not None:
-		assert rawInputIndEnd is not None, "rawInputIndStart set but rawInputIndEnd isn't"
-		self._brailleInputIndStart = self.rawToBraillePos[rawInputIndStart]
-		self._brailleInputIndEnd = self.rawToBraillePos[rawInputIndEnd]
-		self._brailleInputStart = self._brailleInputIndStart + len(brailleapi.INPUT_START_IND)
-		self._brailleInputEnd = self._brailleInputIndEnd - len(brailleapi.INPUT_END_IND)
-		self.brailleCursorPos = (
-			self._brailleInputStart + brailleapi.get_braille_input_handler().untranslatedCursorPos
-		)
-	else:
-		self._brailleInputIndStart = None
+	_originals["TextInfoRegion.update"](self)
 
 
 def getControlFieldBraille(info, field, ancestors, reportStart, formatConfig):
@@ -1536,6 +1454,7 @@ def apply_patches() -> None:
 		brailleapi.patch_module_function("getControlFieldBraille", getControlFieldBraille)
 		brailleapi.patch_module_function("getFormatFieldBraille", getFormatFieldBraille)
 		brailleapi.Region.update = update_region
+		louisHelper.translate = translate_with_addon_tables
 		brailleapi.TextInfoRegion._addTextWithFields = _addTextWithFields
 		brailleapi.TextInfoRegion.update = update_TextInfoRegion
 		brailleapi.TextInfoRegion.previousLine = previousLine
@@ -1701,6 +1620,7 @@ def unload_patches() -> None:
 			brailleapi.restore_module_function("getControlFieldBraille")
 			brailleapi.restore_module_function("getFormatFieldBraille")
 			brailleapi.Region.update = _originals["Region.update"]
+			louisHelper.translate = _originals["louisHelper.translate"]
 			brailleapi.TextInfoRegion._addTextWithFields = _originals["TextInfoRegion._addTextWithFields"]
 			brailleapi.TextInfoRegion.update = _originals["TextInfoRegion.update"]
 			brailleapi.TextInfoRegion.previousLine = _originals["TextInfoRegion.previousLine"]
