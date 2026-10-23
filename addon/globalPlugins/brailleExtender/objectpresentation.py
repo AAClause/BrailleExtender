@@ -172,23 +172,16 @@ def update_NVDAObjectRegion(self):
 def is_current_display_string(current):
 	if hasattr(current, "displayString"):
 		return current.displayString
-	if hasattr(controlTypes, "isCurrentLabels"):
-		try:
-			return controlTypes.isCurrentLabels[current]
-		except KeyError:
-			pass
 	log.debugWarning("Aria-current value not handled: %s" % current)
 	return ""
 
 
 def get_roleLabel(role):
-	if hasattr(controlTypes, "Role"):
-		if isinstance(role, controlTypes.Role):
-			return role.displayString
-		if isinstance(role, str):
-			return getattr(controlTypes.Role, role).displayString
-		raise TypeError()
-	return controlTypes.roleLabels[role]
+	if isinstance(role, controlTypes.Role):
+		return role.displayString
+	if isinstance(role, str):
+		return getattr(controlTypes.Role, role).displayString
+	raise TypeError()
 
 
 def getPropertiesBraille(**propertyValues) -> str:
@@ -333,8 +326,8 @@ def validProgressBar(obj):
 	List = [
 		isinstance(obj, ProgressBar),
 		config.conf["brailleExtender"]["objectPresentation"]["progressBarUpdate"],
-		controlTypes.STATE_INVISIBLE not in obj.states,
-		controlTypes.STATE_OFFSCREEN not in obj.states,
+		controlTypes.State.INVISIBLE not in obj.states,
+		controlTypes.State.OFFSCREEN not in obj.states,
 	]
 	inForeground = obj.isInForeground
 	if not config.conf["brailleExtender"]["objectPresentation"]["reportBackgroundProgressBars"]:

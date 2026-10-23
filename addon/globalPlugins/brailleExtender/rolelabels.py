@@ -43,11 +43,7 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 		self.categories.Bind(wx.EVT_CHOICE, self.onCategories)
 		self.categories.SetSelection(0)
 
-		choices = []
-		if hasattr(controlTypes, "roleLabels"):
-			choices = [controlTypes.roleLabels[int(k)] for k in brailleapi.roleLabels.keys()]
-
-		self.labels = sHelper.addLabeledControl(_("&Role:"), wx.Choice, choices=choices)
+		self.labels = sHelper.addLabeledControl(_("&Role:"), wx.Choice, choices=[])
 		self.labels.Bind(wx.EVT_CHOICE, self.onLabels)
 
 		self.label = sHelper.addLabeledControl(_("Braille &label"), wx.TextCtrl)
@@ -83,24 +79,14 @@ class SettingsDlg(gui.settingsDialogs.SettingsPanel):
 	def onCategories(self, event):
 		labels = []
 		idCategory = self.categories.GetSelection()
-		oldRoleLabels = hasattr(controlTypes, "roleLabels")
 		if idCategory == 0:
-			if oldRoleLabels:
-				labels = [controlTypes.roleLabels[int(k)] for k in brailleapi.roleLabels.keys()]
-			else:
-				labels = [role.displayString for role in brailleapi.roleLabels.keys()]
+			labels = [role.displayString for role in brailleapi.roleLabels.keys()]
 		elif idCategory == 1:
 			labels = list(brailleapi.landmarkLabels.keys())
 		elif idCategory == 2:
-			if oldRoleLabels:
-				labels = [controlTypes.stateLabels[k] for k in brailleapi.positiveStateLabels.keys()]
-			else:
-				labels = [role.displayString for role in brailleapi.positiveStateLabels.keys()]
+			labels = [state.displayString for state in brailleapi.positiveStateLabels.keys()]
 		elif idCategory == 3:
-			if oldRoleLabels:
-				labels = [controlTypes.stateLabels[k] for k in brailleapi.negativeStateLabels.keys()]
-			else:
-				labels = [role.displayString for role in brailleapi.negativeStateLabels.keys()]
+			labels = [state.displayString for state in brailleapi.negativeStateLabels.keys()]
 		for iLabel, label in enumerate(labels):
 			idLabel = getIDFromIndexes(idCategory, iLabel)
 			actualLabel = getLabelFromID(idCategory, idLabel)
@@ -190,7 +176,6 @@ roleLabels = {}
 
 
 def getIDFromIndexes(idCategory, idLabel):
-	oldRoleLabels = hasattr(controlTypes, "roleLabels")
 	if not isinstance(idCategory, int):
 		raise TypeError(f"Wrong type for idCategory ({idCategory})")
 	if not isinstance(idLabel, int):
@@ -206,7 +191,7 @@ def getIDFromIndexes(idCategory, idLabel):
 		idRole = list(brailleapi.negativeStateLabels.keys())[idLabel]
 	else:
 		raise ValueError(f"Wrong value for category ({idCategory})")
-	if not oldRoleLabels and isinstance(idRole, (controlTypes.Role, controlTypes.State)):
+	if isinstance(idRole, (controlTypes.Role, controlTypes.State)):
 		idRole = idRole.value
 	return idRole
 

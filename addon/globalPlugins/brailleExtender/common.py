@@ -17,13 +17,7 @@ import globalVars
 import languageHandler
 
 
-def get_is_current_no():
-	if hasattr(controlTypes, "IsCurrent"):
-		return controlTypes.IsCurrent.NO
-	return False
-
-
-IS_CURRENT_NO = get_is_current_no()
+IS_CURRENT_NO = controlTypes.IsCurrent.NO
 
 configDir = "%s/brailleExtender" % globalVars.appArgs.configPath
 baseDir = os.path.dirname(__file__)

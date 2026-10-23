@@ -602,14 +602,12 @@ def set_speech_talk():
 def get_control_type(control_type):
 	if not isinstance(control_type, str):
 		raise TypeError("control_type must be a string")
-	if hasattr(controlTypes, "Role"):
-		attr = "_".join(control_type.split("_")[1:])
-		if control_type.startswith("ROLE_"):
-			return getattr(controlTypes.Role, attr)
-		if control_type.startswith("STATE_"):
-			return getattr(controlTypes.State, attr)
-		raise ValueError(control_type)
-	return getattr(controlTypes, control_type)
+	attr = "_".join(control_type.split("_")[1:])
+	if control_type.startswith("ROLE_"):
+		return getattr(controlTypes.Role, attr)
+	if control_type.startswith("STATE_"):
+		return getattr(controlTypes.State, attr)
+	raise ValueError(control_type)
 
 
 def get_symbol_level(symbol_level):
