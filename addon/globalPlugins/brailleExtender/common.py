@@ -59,7 +59,6 @@ def nvdaVersionAtLeast(year: int, major: int, minor: int = 0) -> bool:
 # - 2026.1: EXCEL_CELLINFO moved to NVDAHelper.localLib; localLib is a module (was the helper CDLL binding)
 # - 2026.2: built-in braille automatic scroll (BrailleHandler.autoScroll, autoScrollRate)
 # BrailleExtender speakScroll stays independent; turn off NVDA's "Speak when navigating by line or paragraph" to avoid duplicates.
-NVDA_HAS_INTERRUPT_SPEECH_WHILE_SCROLLING = nvdaVersionAtLeast(2022, 3)
 NVDA_HAS_SPEAK_ON_ROUTING = nvdaVersionAtLeast(2024, 4)
 NVDA_HAS_CUSTOM_BRAILLE_TABLES = nvdaVersionAtLeast(2024, 3)
 NVDA_HAS_AUTOMATIC_BRAILLE_TABLES = nvdaVersionAtLeast(2025, 1)

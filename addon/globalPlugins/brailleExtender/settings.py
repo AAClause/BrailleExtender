@@ -26,7 +26,6 @@ from .common import (
 	punctuationSeparator,
 	RC_NORMAL,
 	nvdaVersionAtLeast,
-	NVDA_HAS_INTERRUPT_SPEECH_WHILE_SCROLLING,
 	NVDA_HAS_SPEAK_ON_ROUTING,
 )
 from .autoscroll import SettingsDlg as AutoScrollDlg
@@ -114,20 +113,6 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 			)
 
 		# Translators: label of a dialog.
-		self.stopSpeechScroll = sHelper.addItem(
-			wx.CheckBox(self, label=_("Speech &interrupt when scrolling on same line"))
-		)
-		self.stopSpeechScroll.SetValue(config.conf["brailleExtender"]["stopSpeechScroll"])
-		if NVDA_HAS_INTERRUPT_SPEECH_WHILE_SCROLLING:
-			self.stopSpeechScroll.Enable(False)
-			sHelper.addItem(
-				wx.StaticText(
-					self,
-					label=_('Use NVDA Braille settings → "Interrupt speech while scrolling" (since 2022.3)'),
-				)
-			)
-
-		# Translators: label of a dialog.
 		self.skipBlankLinesScroll = sHelper.addItem(
 			wx.CheckBox(self, label=_("S&kip blank lines during text scrolling"))
 		)
@@ -152,21 +137,14 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 		)
 		self.muteSoundsWithSpeech.SetValue(config.conf["brailleExtender"]["muteSoundsWithSpeech"])
 
-		# Translators: label of a dialog.
-		self.speakRoutingTo = sHelper.addItem(
-			wx.CheckBox(self, label=_("Announce character when &routing braille cursor"))
-		)
-		self.speakRoutingTo.SetValue(config.conf["brailleExtender"]["speakRoutingTo"])
-		if NVDA_HAS_SPEAK_ON_ROUTING:
-			self.speakRoutingTo.Enable(False)
-			sHelper.addItem(
-				wx.StaticText(
-					self,
-					label=_(
-						'Use NVDA Braille settings → "Speak character when routing cursor in text" (since 2024.4)'
-					),
-				)
+		# NVDA 2024.4+ has its own "Speak character when routing cursor in text" braille setting.
+		self.speakRoutingTo = None
+		if not NVDA_HAS_SPEAK_ON_ROUTING:
+			# Translators: label of a dialog.
+			self.speakRoutingTo = sHelper.addItem(
+				wx.CheckBox(self, label=_("Announce character when &routing braille cursor"))
 			)
+			self.speakRoutingTo.SetValue(config.conf["brailleExtender"]["speakRoutingTo"])
 
 		# Translators: label of a dialog.
 		label = _("Routing cursors behavior in edit &fields:")
@@ -279,12 +257,12 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 		else:
 			instanceGP.reverseScrollBtns(None, True)
 		config.conf["brailleExtender"]["reverseScrollBtns"] = self.reverseScrollBtns.IsChecked()
-		config.conf["brailleExtender"]["stopSpeechScroll"] = self.stopSpeechScroll.IsChecked()
 		config.conf["brailleExtender"]["skipBlankLinesScroll"] = self.skipBlankLinesScroll.IsChecked()
 		config.conf["brailleExtender"]["smartCapsLock"] = self.smartCapsLock.IsChecked()
 		config.conf["brailleExtender"]["stopSpeechUnknown"] = self.stopSpeechUnknown.IsChecked()
 		config.conf["brailleExtender"]["muteSoundsWithSpeech"] = self.muteSoundsWithSpeech.IsChecked()
-		config.conf["brailleExtender"]["speakRoutingTo"] = self.speakRoutingTo.IsChecked()
+		if self.speakRoutingTo is not None:
+			config.conf["brailleExtender"]["speakRoutingTo"] = self.speakRoutingTo.IsChecked()
 
 		config.conf["brailleExtender"]["speakScroll"] = list(addoncfg.focusOrReviewChoices.keys())[
 			self.speakScroll.GetSelection()

@@ -195,7 +195,6 @@ def getConfspec():
 			CHOICE_focusAndReview=CHOICE_focusAndReview,
 		),
 		"smartCapsLock": "boolean(default=True)",
-		"stopSpeechScroll": "boolean(default=False)",
 		"stopSpeechUnknown": "boolean(default=True)",
 		"muteSoundsWithSpeech": "boolean(default=True)",
 		"speakRoutingTo": "boolean(default=True)",
@@ -395,6 +394,8 @@ _DEPRECATED_BRAILLE_EXTENDER_KEYS: tuple[tuple[str, ...], ...] = (
 	("speechHistoryMode", "backup_tetherTo"),
 	("speechHistoryMode", "backup_autoTether"),
 	("features", "attributes"),
+	# Superseded by NVDA's "Interrupt speech while scrolling" braille setting (NVDA 2022.3+).
+	("stopSpeechScroll",),
 	# Report rows without any braille presentation or settings UI.
 	("documentFormatting", "reports", "borderColor"),
 	("documentFormatting", "reports", "borderStyle"),
