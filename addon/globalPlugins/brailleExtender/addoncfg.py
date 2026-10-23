@@ -272,6 +272,8 @@ def getConfspec():
 			},
 			"reports": {
 				"alignment": REPORT_CHOICES,
+				# Not shown in the settings: NVDA has no braille presentation for cell borders
+				# (only speech, through reportCellBorders). Kept so existing configs stay valid.
 				"borderColor": REPORT_CHOICES,
 				"borderStyle": REPORT_CHOICES,
 				"color": REPORT_CHOICES,

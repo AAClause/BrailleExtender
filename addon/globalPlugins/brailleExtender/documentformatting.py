@@ -140,8 +140,6 @@ LABELS_REPORTS = {
 	"alignment": N_("&Alignment"),
 	"color": N_("&Colors"),
 	"style": N_("St&yle"),
-	"borderColor": N_("Border &color"),
-	"borderStyle": N_("Border St&yle"),
 	"fontName": N_("&Font name"),
 	"fontSize": N_("Font &size"),
 	"page": N_("&Pages"),
