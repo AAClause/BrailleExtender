@@ -55,6 +55,7 @@ from . import undefinedchars
 from .common import (
 	baseDir,
 	BRLEX_CELL_MASK_BY_METHOD,
+	BRLEX_DOT8_CELL_MASK,
 	CHOICE_tags,
 	RC_EMULATE_ARROWS_BEEP,
 	RC_EMULATE_ARROWS_SILENT,
@@ -1474,15 +1475,30 @@ def _createTablesString(tablesList):
 	)
 
 
+def cursor_cell(cell: int, cursor_shape: int) -> int:
+	"""Return ``cell`` with the braille cursor drawn on it (the "up" phase of the blink).
+
+	The cursor is normally shown by raising the dots of ``cursor_shape``. When the cell already
+	has all of those dots (spelling or grammar errors, bold... marked with dots 7 and 8), raising
+	them changes nothing and the cursor is invisible. In that case the cursor is shown by lowering
+	dot 8 instead (or the whole shape when it has no dot 8), so the dot blinks at the cursor position.
+	"""
+	if cell | cursor_shape != cell:
+		return cell | cursor_shape
+	lowered = BRLEX_DOT8_CELL_MASK if cursor_shape & BRLEX_DOT8_CELL_MASK else cursor_shape
+	return cell & ~lowered
+
+
 def _displayWithCursor(self):
 	if not self._cells:
 		return
 	cells = list(self._cells)
 	if self._cursorPos is not None and self._cursorBlinkUp and not self._auto_scroll:
 		if self.getTether() == self.TETHER_FOCUS:
-			cells[self._cursorPos] |= config.conf["braille"]["cursorShapeFocus"]
+			cursor_shape = config.conf["braille"]["cursorShapeFocus"]
 		else:
-			cells[self._cursorPos] |= config.conf["braille"]["cursorShapeReview"]
+			cursor_shape = config.conf["braille"]["cursorShapeReview"]
+		cells[self._cursorPos] = cursor_cell(cells[self._cursorPos], cursor_shape)
 	self._writeCells(cells)
 
 
