@@ -450,6 +450,12 @@ def apply_braille_region_post_translation_extras(region: Any) -> None:
 			_or_braille_mask_across_raw_positions(region, align_dots)
 
 
+def _region_format_config(region: Any) -> dict[str, Any]:
+	return build_text_with_fields_format_config(
+		suppress_table_cell_coords=getattr(region, "suppressTableCellCoords", False),
+	)
+
+
 def decorator(fn, s):
 	def _getTypeformFromFormatField(self, field, formatConfig=None):
 		if formatConfig is None:
@@ -501,10 +507,9 @@ def decorator(fn, s):
 		return louis_typeform_flags, extra_dots_cell_mask
 
 	def addTextWithFields_edit(self, info, formatConfig, isSelection=False):
-		suppress_table_cell_coords = getattr(self, "suppressTableCellCoords", False)
-		formatConfig_ = build_text_with_fields_format_config(
-			suppress_table_cell_coords=suppress_table_cell_coords,
-		)
+		# Built once per region update (see ``update`` below); a region updated another way
+		# builds it for this call.
+		formatConfig_ = getattr(self, "_beFormatConfig", None) or _region_format_config(self)
 		textInfo_ = info.getTextWithFields(formatConfig_)
 		formatField = textInfos.FormatField()
 		for field in textInfo_:
@@ -516,7 +521,11 @@ def decorator(fn, s):
 		fn(self, info, formatConfig_, isSelection)
 
 	def update(self):
-		fn(self)
+		self._beFormatConfig = _region_format_config(self)
+		try:
+			fn(self)
+		finally:
+			self._beFormatConfig = None
 		apply_braille_region_post_translation_extras(self)
 
 	if s == "addTextWithFields":

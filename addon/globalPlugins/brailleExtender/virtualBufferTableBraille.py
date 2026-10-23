@@ -577,6 +577,8 @@ def _buildCellBraille(
 ) -> tuple[_CellBrailleSnapshot, int | None]:
 	"""Build cell braille (and map ``caret`` into it) in one ``TextInfoRegion`` pass."""
 	builder = _CellBrailleTextBuilder(cellInfo.obj)
+	# Reuse the row's format config for every chunk of the cell (see documentformatting.decorator).
+	builder._beFormatConfig = formatConfig
 	builderCursorPos = _populateCellBrailleBuilder(builder, cellInfo, caret, formatConfig)
 	snapshot = _snapshotFromCellBuilder(builder)
 	if builderCursorPos is None:
