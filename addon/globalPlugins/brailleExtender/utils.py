@@ -587,6 +587,10 @@ def is_speechMode_talk() -> bool:
 	return speech_mode == speech.speechMode_talk
 
 
+def is_speechMode_off() -> bool:
+	return get_speech_mode() == speech.SpeechMode.off
+
+
 def set_speech_off():
 	if hasattr(speech, "SpeechMode"):
 		return speech.setSpeechMode(speech.SpeechMode.off)

@@ -144,6 +144,15 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 		self.stopSpeechUnknown.SetValue(config.conf["brailleExtender"]["stopSpeechUnknown"])
 
 		# Translators: label of a dialog.
+		self.muteSoundsWithSpeech = sHelper.addItem(
+			wx.CheckBox(
+				self,
+				label=_("When speech is off, also &mute NVDA sounds (beeps, error and mode sounds)"),
+			)
+		)
+		self.muteSoundsWithSpeech.SetValue(config.conf["brailleExtender"]["muteSoundsWithSpeech"])
+
+		# Translators: label of a dialog.
 		self.speakRoutingTo = sHelper.addItem(
 			wx.CheckBox(self, label=_("Announce character when &routing braille cursor"))
 		)
@@ -274,6 +283,7 @@ class GeneralDlg(gui.settingsDialogs.SettingsPanel):
 		config.conf["brailleExtender"]["skipBlankLinesScroll"] = self.skipBlankLinesScroll.IsChecked()
 		config.conf["brailleExtender"]["smartCapsLock"] = self.smartCapsLock.IsChecked()
 		config.conf["brailleExtender"]["stopSpeechUnknown"] = self.stopSpeechUnknown.IsChecked()
+		config.conf["brailleExtender"]["muteSoundsWithSpeech"] = self.muteSoundsWithSpeech.IsChecked()
 		config.conf["brailleExtender"]["speakRoutingTo"] = self.speakRoutingTo.IsChecked()
 
 		config.conf["brailleExtender"]["speakScroll"] = list(addoncfg.focusOrReviewChoices.keys())[

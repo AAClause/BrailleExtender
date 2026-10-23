@@ -197,6 +197,7 @@ def getConfspec():
 		"smartCapsLock": "boolean(default=True)",
 		"stopSpeechScroll": "boolean(default=False)",
 		"stopSpeechUnknown": "boolean(default=True)",
+		"muteSoundsWithSpeech": "boolean(default=True)",
 		"speakRoutingTo": "boolean(default=True)",
 		"routingCursorsEditFields": f"option({RC_NORMAL}, {RC_EMULATE_ARROWS_BEEP}, {RC_EMULATE_ARROWS_SILENT}, default={RC_NORMAL})",
 		"speechHistoryMode": {

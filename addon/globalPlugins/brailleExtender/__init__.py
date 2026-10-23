@@ -37,6 +37,7 @@ from . import addoncfg
 config.conf.spec["brailleExtender"] = addoncfg.getConfspec()
 from . import patches
 from . import rotor
+from . import soundmute
 from . import advancedinput
 from . import huc
 from . import documentformatting
@@ -149,6 +150,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		appModuleHandler.registerExecutableWithAppModule("excel", "brailleExtenderExcel")
 		patches.instanceGP = self
 		patches.apply_patches()
+		soundmute.install()
 		brailleapi.TextInfoRegion._addTextWithFields = documentformatting.decorator(
 			brailleapi.TextInfoRegion._addTextWithFields, "addTextWithFields"
 		)
@@ -1631,6 +1633,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		tabledictionaries.remove_temporary_dictionary()
 		addoncfg.unregister_right_margin_filter()
 		advancedinput.terminate()
+		soundmute.uninstall()
 		patches.unload_patches()
 		super().terminate()
 
