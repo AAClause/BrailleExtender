@@ -394,8 +394,9 @@ def get_liblouis_typeform(attr_name: str) -> int:
 def _or_braille_mask_on_cell_span(region: Any, start_b: int, end_b: int, mask: int) -> None:
 	if not mask:
 		return
-	for bp in range(start_b, end_b + 1):
-		region.brailleCells[bp] |= mask
+	cells = region.brailleCells
+	for bp in range(max(0, start_b), min(end_b + 1, len(cells))):
+		cells[bp] |= mask
 
 
 def _or_braille_mask_across_raw_positions(region: Any, mask: int) -> None:

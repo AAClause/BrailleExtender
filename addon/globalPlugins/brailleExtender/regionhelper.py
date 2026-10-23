@@ -47,11 +47,23 @@ def getBrailleCellFromRawPos(region, i):
 
 
 def getBraillePosFromRawPos(region, i):
+	"""Inclusive span of braille cells produced at raw position ``i``.
+
+	The span is the run of consecutive cells mapped to the same raw position as the first one.
+	Counting every cell mapped to that position over the whole region is wrong when liblouis maps
+	non-adjacent cells to it (emphasis indicators, for example): the span then ran past the end
+	of ``brailleCells``.
+	"""
+	braille_to_raw = region.brailleToRawPos
 	try:
 		start = region.rawToBraillePos[i]
-		end = start + region.brailleToRawPos.count(region.brailleToRawPos[start]) - 1
+		raw = braille_to_raw[start]
 	except IndexError:
-		start, end = 0, 0
+		return 0, 0
+	end = start
+	last = min(len(braille_to_raw), len(region.brailleCells)) - 1
+	while end < last and braille_to_raw[end + 1] == raw:
+		end += 1
 	return start, end
 
 
