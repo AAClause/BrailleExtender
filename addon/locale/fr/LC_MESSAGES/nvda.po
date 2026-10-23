@@ -2819,3 +2819,40 @@ msgstr ""
 #: buildVars.py:134
 msgid "and other contributors"
 msgstr "et d’autres contributeurs"
+
+
+msgid "When speech is off, also &mute NVDA sounds (beeps, error and mode sounds)"
+msgstr "Quand la parole est coupée, couper aussi les &sons de NVDA (bips, son d'erreur et sons de mode)"
+
+msgid "{main} ({detail})"
+msgstr "{main} ({detail})"
+
+msgid "columns {start}-{end}"
+msgstr "colonnes {start}-{end}"
+
+msgid "column {column}"
+msgstr "colonne {column}"
+
+msgid "rows {start}-{end}"
+msgstr "lignes {start}-{end}"
+
+msgid "row {row}"
+msgstr "ligne {row}"
+
+msgid "Virtual documents"
+msgstr "Documents virtuels"
+
+msgid "Choose how tables in browse mode (web pages and other virtual documents) appear on the braille display."
+msgstr "Choisissez comment les tableaux en mode navigation (pages web et autres documents virtuels) s'affichent sur l'afficheur braille."
+
+msgid "Display full table &row on one braille line"
+msgstr "Afficher toute la &ligne du tableau sur une ligne braille"
+
+msgid "&Separator between cells:"
+msgstr "&Séparateur entre les cellules :"
+
+msgid "Start of &row line:"
+msgstr "&Début de ligne :"
+
+msgid "End of row &line:"
+msgstr "&Fin de ligne :"
