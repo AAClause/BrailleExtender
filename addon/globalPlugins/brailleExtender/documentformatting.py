@@ -279,6 +279,16 @@ def use_be_format_field_chrome(key: str) -> bool:
 	return not report_row_follows_nvda(key)
 
 
+def alignment_braille_enabled() -> bool:
+	"""True when the Alignment report row asks Braille Extender to show text alignment in braille.
+
+	Line padding and dots 7/8 obey the same rule as the alignment tags (see
+	``patches.getFormatFieldBraille``): shown only when the row is "enabled" and plain text mode
+	is off. NVDA itself does not present alignment in braille, so "follow NVDA" shows nothing.
+	"""
+	return bool(get_report("alignment")) and use_be_format_field_chrome("alignment")
+
+
 def toggle_report(report):
 	cur = get_report(report, 0)
 	if not cur:
@@ -369,7 +379,8 @@ def apply_braille_region_post_translation_extras(region: Any) -> None:
 			noAlign = True
 			postReplacements.append(regionhelper.BrailleCellReplacement(start=0, insertBefore=("⠀" * s)))
 	formatField = getattr(region, "formatField", None) or textInfos.FormatField()
-	if not noAlign and get_report("alignments"):
+	show_alignment = not noAlign and alignment_braille_enabled()
+	if show_alignment:
 		textAlign = formatField.get("text-align")
 		if textAlign and alignment_uses_display_line_pad(textAlign) and textAlign not in ("start", "left"):
 			textAlign_norm = normalizeTextAlign(textAlign) or textAlign
@@ -391,9 +402,10 @@ def apply_braille_region_post_translation_extras(region: Any) -> None:
 			if active_cell_mask:
 				sb, eb = regionhelper.getBraillePosFromRawPos(region, raw_pos)
 				_or_braille_mask_on_cell_span(region, sb, eb, active_cell_mask)
-	align_dots = alignment_dots_cell_mask(formatField.get("text-align"))
-	if align_dots and not noAlign and get_report("alignments"):
-		_or_braille_mask_across_raw_positions(region, align_dots)
+	if show_alignment:
+		align_dots = alignment_dots_cell_mask(formatField.get("text-align"))
+		if align_dots:
+			_or_braille_mask_across_raw_positions(region, align_dots)
 
 
 def decorator(fn, s):
