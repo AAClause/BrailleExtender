@@ -205,8 +205,6 @@ def getConfspec():
 			"limit": "integer(min=0, default=50)",
 			"numberEntries": "boolean(default=True)",
 			"speakEntries": "boolean(default=True)",
-			"backup_tetherTo": 'string(default="focus")',
-			"backup_autoTether": "boolean(default=True)",
 		},
 		"inputTableShortcuts": 'string(default="?")',
 		"activeInputTable": 'string(default="")',
@@ -237,7 +235,6 @@ def getConfspec():
 		"reviewModeTerminal": "boolean(default=True)",
 		"features": {
 			"roleLabels": "boolean(default=False)",
-			"attributes": "boolean(default=True)",
 		},
 		"objectPresentation": {
 			"orderProperties": f'string(default="{ADDON_ORDER_PROPERTIES}")',
@@ -273,20 +270,13 @@ def getConfspec():
 			},
 			"reports": {
 				"alignment": REPORT_CHOICES,
-				# Not shown in the settings: NVDA has no braille presentation for cell borders
-				# (only speech, through reportCellBorders). Kept so existing configs stay valid.
-				"borderColor": REPORT_CHOICES,
-				"borderStyle": REPORT_CHOICES,
 				"color": REPORT_CHOICES,
 				"emphasis": REPORT_CHOICES,
 				"fontAttributes": REPORT_CHOICES,
 				"fontName": REPORT_CHOICES,
 				"fontSize": REPORT_CHOICES,
 				"highlight": REPORT_CHOICES,
-				"layoutTables": REPORT_CHOICES,
-				"lineIndentation": REPORT_CHOICES,
 				"lineNumber": REPORT_CHOICES,
-				"lineSpacing": REPORT_CHOICES,
 				"page": REPORT_CHOICES,
 				"paragraphIndentation": REPORT_CHOICES,
 				"spellingErrors": REPORT_CHOICES_E,
@@ -397,8 +387,21 @@ def loadPreferredTables() -> None:
 # Keys formerly stored under documentFormatting before the dedicated excel section existed.
 _EXCEL_KEYS_FROM_DOCUMENT_FORMATTING = ("cellFormula",)
 
-# Top-level brailleExtender keys dropped from the confspec (best-effort removal).
-_DEPRECATED_BRAILLE_EXTENDER_KEYS = ("brailleTables", "useCustomBrailleTables")
+# brailleExtender config keys (as section paths) dropped from the confspec (best-effort removal).
+_DEPRECATED_BRAILLE_EXTENDER_KEYS: tuple[tuple[str, ...], ...] = (
+	("brailleTables",),
+	("useCustomBrailleTables",),
+	# Never read: speech history mode no longer changes NVDA's braille tether.
+	("speechHistoryMode", "backup_tetherTo"),
+	("speechHistoryMode", "backup_autoTether"),
+	("features", "attributes"),
+	# Report rows without any braille presentation or settings UI.
+	("documentFormatting", "reports", "borderColor"),
+	("documentFormatting", "reports", "borderStyle"),
+	("documentFormatting", "reports", "layoutTables"),
+	("documentFormatting", "reports", "lineIndentation"),
+	("documentFormatting", "reports", "lineSpacing"),
+)
 
 # Per-display defaults written when a display has no saved profile value yet.
 _DISPLAY_PROFILE_DEFAULTS = {
@@ -498,9 +501,14 @@ def _migrate_legacy_auto_scroll_delay() -> None:
 
 def _migrate_deprecated_braille_extender_keys() -> None:
 	"""Drop keys removed from the confspec (deletion may be ignored by NVDA)."""
-	be = config.conf["brailleExtender"]
-	for key in _DEPRECATED_BRAILLE_EXTENDER_KEYS:
-		_try_remove_config_key(be, key)
+	for *sections, key in _DEPRECATED_BRAILLE_EXTENDER_KEYS:
+		section = config.conf["brailleExtender"]
+		try:
+			for name in sections:
+				section = section[name]
+		except KeyError:
+			continue
+		_try_remove_config_key(section, key)
 
 
 def _ensure_display_profile_defaults() -> None:
