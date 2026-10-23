@@ -856,12 +856,20 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			_restoreMainBuffer()
 		else:
 			self.showHourDate()
-			self.hourDateTimer = wx.PyTimer(self.showHourDate)
-			time.sleep(1.02 - round(time.time() - int(time.time()), 3))
-			self.showHourDate()
-			self.hourDateTimer.Start(1000)
+			self._scheduleHourDateTick()
 		self.hourDatePlayed = not self.hourDatePlayed
 		return
+
+	def _scheduleHourDateTick(self):
+		"""Refresh the hour/date just after the next second boundary, without blocking NVDA."""
+		delay = int((1.02 - (time.time() % 1)) * 1000)
+		self.hourDateTimer = wx.CallLater(delay, self._hourDateTick)
+
+	def _hourDateTick(self):
+		if not self.hourDatePlayed:
+			return
+		self.showHourDate()
+		self._scheduleHourDateTick()
 
 	@staticmethod
 	def showHourDate():
