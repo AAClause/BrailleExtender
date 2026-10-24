@@ -67,6 +67,8 @@ NVDA_HAS_BRAILLE_AUTO_SCROLL = nvdaVersionAtLeast(2026, 2)
 
 # Config value for disabled additional Liblouis output pass (``brailleExtender.postTable``).
 POST_TABLE_NONE = "None"
+# Config value for disabled secondary input braille table (``brailleExtender.secondaryInputTable``).
+SECONDARY_INPUT_TABLE_NONE = "None"
 
 # NVDA 2024.x has no ``brailleTables.DEFAULT_TABLE`` (added in 2025.1).
 # Values match NVDA 2024.1 configSpec defaults / historical addon fallbacks.

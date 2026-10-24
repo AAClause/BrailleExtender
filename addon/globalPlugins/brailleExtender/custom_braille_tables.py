@@ -22,6 +22,7 @@ from .common import (
 	NVDA_HAS_AUTOMATIC_BRAILLE_TABLES,
 	NVDA_HAS_CUSTOM_BRAILLE_TABLES,
 	POST_TABLE_NONE,
+	SECONDARY_INPUT_TABLE_NONE,
 	configDir,
 	default_braille_table_file_for_cur_language,
 	parse_braille_table_list,
@@ -106,6 +107,11 @@ def iter_tables_to_register() -> set[str]:
 		meta = load_config().get("tables", {}).get(active_output, {})
 		if meta.get("output", True):
 			registered.add(active_output)
+	secondary_input = config.conf["brailleExtender"].get("secondaryInputTable")
+	if secondary_input and is_custom_table_configured(secondary_input):
+		meta = load_config().get("tables", {}).get(secondary_input, {})
+		if meta.get("input", True):
+			registered.add(secondary_input)
 	return registered
 
 
@@ -440,6 +446,32 @@ def sanitize_active_braille_tables(*, apply_handlers: bool = True) -> None:
 		)
 		config.conf["brailleExtender"]["inputTableShortcuts"] = "?"
 
+	secondary_input = config.conf["brailleExtender"].get("secondaryInputTable")
+	if (
+		secondary_input
+		and secondary_input != SECONDARY_INPUT_TABLE_NONE
+		and secondary_input != "auto"
+		and not is_table_usable(secondary_input)
+	):
+		log.warning(
+			"secondary input table %r is unavailable; disabling it",
+			secondary_input,
+		)
+		config.conf["brailleExtender"]["secondaryInputTable"] = SECONDARY_INPUT_TABLE_NONE
+
+	primary_input = config.conf["brailleExtender"].get("primaryInputTable")
+	if (
+		primary_input
+		and primary_input != SECONDARY_INPUT_TABLE_NONE
+		and primary_input != "auto"
+		and not is_table_usable(primary_input)
+	):
+		log.warning(
+			"primary input table %r is unavailable; clearing it",
+			primary_input,
+		)
+		config.conf["brailleExtender"]["primaryInputTable"] = ""
+
 
 def resolve_registered_table_path(table_file_name: str) -> str:
 	"""Return the on-disk path for a table registered with NVDA (delegates to the Liblouis chain)."""
@@ -606,6 +638,12 @@ def release_table_references(file_name: str, *, apply_handlers: bool = True) -> 
 	if config.conf["brailleExtender"].get("postTable") == file_name:
 		config.conf["brailleExtender"]["postTable"] = POST_TABLE_NONE
 
+	if config.conf["brailleExtender"].get("secondaryInputTable") == file_name:
+		config.conf["brailleExtender"]["secondaryInputTable"] = SECONDARY_INPUT_TABLE_NONE
+
+	if config.conf["brailleExtender"].get("primaryInputTable") == file_name:
+		config.conf["brailleExtender"]["primaryInputTable"] = ""
+
 	if config.conf["brailleExtender"].get("inputTableShortcuts") == file_name:
 		config.conf["brailleExtender"]["inputTableShortcuts"] = "?"
 
@@ -653,6 +691,10 @@ def _strip_custom_tables_from_braille_extender_lists() -> None:
 		_remove_from_braille_extender_table_list("outputTables", file_name)
 		if config.conf["brailleExtender"].get("postTable") == file_name:
 			config.conf["brailleExtender"]["postTable"] = POST_TABLE_NONE
+		if config.conf["brailleExtender"].get("secondaryInputTable") == file_name:
+			config.conf["brailleExtender"]["secondaryInputTable"] = SECONDARY_INPUT_TABLE_NONE
+		if config.conf["brailleExtender"].get("primaryInputTable") == file_name:
+			config.conf["brailleExtender"]["primaryInputTable"] = ""
 		if config.conf["brailleExtender"].get("inputTableShortcuts") == file_name:
 			config.conf["brailleExtender"]["inputTableShortcuts"] = "?"
 
