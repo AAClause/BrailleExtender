@@ -283,17 +283,53 @@ def _browse_probe_state(ti) -> tuple:
 	return ("a", id(ti), ready, pt)
 
 
-def resolve_document_tree_interceptor(obj):
-	"""Resolve the browse/document tree interceptor NVDA would use for quick nav.
+_detached_ti: Any = None
 
-	Microsoft Word with UI Automation sets ``shouldCreateTreeInterceptor = False``; NVDA then
-	relies on ``getTreeInterceptor`` / ``update(..., force=True)`` so a ``WordBrowseModeDocument``
-	can exist while ``obj.treeInterceptor`` is still unset. Without this, rotor quick nav falls
-	back to *Not available here* because ``getattr(ti, script_…)`` is never found.
 
-	``update(..., force=True)`` is only used when the focus object disables automatic TI creation.
-	Calling it for normal browsers (Firefox / Chromium) would bypass NVDA's
-	``enableOnPageLoad`` / browse-mode guards and can load virtual buffers too early.
+def _detached_tree_interceptor(obj, build: bool):
+	"""Private tree interceptor for ``obj``, never added to NVDA's ``runningTable``.
+
+	A registered ``BrowseModeTreeInterceptor`` starts with ``passThrough = False``; once in
+	``runningTable``, the next focus on that document (Alt+Tab back into Word, for example)
+	picks it up and NVDA switches to browse mode on its own. Keeping our instance out of the
+	table gives rotor quick nav its scripts without changing NVDA's mode.
+
+	A new instance is only built when ``build`` is true, i.e. on an explicit rotor action;
+	focus changes only reuse the one already built for the same document.
+	"""
+	global _detached_ti
+	ti = _detached_ti
+	if ti is not None:
+		if ti.isAlive and ti.rootNVDAObject == obj:
+			return ti
+		if not ti.isAlive:
+			_detached_ti = None
+	if not build:
+		return None
+	try:
+		ti = obj.treeInterceptorClass(obj)
+	except NotImplementedError:
+		return None
+	except Exception:  # noqa: BLE001
+		log.debugWarning(f"Rotor: could not build a tree interceptor for {obj!r}", exc_info=True)
+		return None
+	if not ti.isAlive:
+		return None
+	_detached_ti = ti
+	return ti
+
+
+def resolve_document_tree_interceptor(obj, build: bool = True):
+	"""Resolve the browse/document tree interceptor to use for rotor quick nav.
+
+	Returns the tree interceptor NVDA already runs for ``obj`` when there is one. This must never
+	create and register one itself (``treeInterceptorHandler.update``): that would turn browse
+	mode on behind the user's back.
+
+	Microsoft Word sets ``shouldCreateTreeInterceptor = False``, so in focus mode there is no
+	tree interceptor at all and rotor quick nav would only say *Not available here*. For such
+	objects a detached instance is used instead (see ``_detached_tree_interceptor``); pass
+	``build=False`` from code that runs on every focus change so none is built there.
 	"""
 	if obj is None:
 		return None
@@ -306,16 +342,13 @@ def resolve_document_tree_interceptor(obj):
 		ti = None
 	if ti is not None:
 		return ti
-	ti = treeInterceptorHandler.update(obj)
-	if ti is not None:
-		return ti
-	if not getattr(obj, "shouldCreateTreeInterceptor", True):
-		return treeInterceptorHandler.update(obj, force=True)
-	return None
+	if getattr(obj, "sleepMode", False) or getattr(obj, "shouldCreateTreeInterceptor", True):
+		return None
+	return _detached_tree_interceptor(obj, build)
 
 
-def _tree_interceptor_for_quicknav_probe():
-	return resolve_document_tree_interceptor(api.getFocusObject())
+def _tree_interceptor_for_quicknav_probe(build: bool):
+	return resolve_document_tree_interceptor(api.getFocusObject(), build)
 
 
 def _iter_probe_quick_nav(ti, rotor_id_str: str) -> bool:
@@ -440,12 +473,16 @@ def enabled_ids_from_config() -> frozenset[str]:
 	return _enabled_set_from_raw(str(_rotor_conf().get("itemEnabled", "") or ""))
 
 
-def refresh_active_sequence() -> None:
+def refresh_active_sequence(build: bool = False) -> None:
+	"""Recompute the rotor items available for the focus.
+
+	``build`` allows building a detached tree interceptor to filter items (rotor actions only).
+	"""
 	global _active_sequence, _seq_cache_key
 	conf = _rotor_conf()
 	ors = str(conf.get("itemOrder", "") or "")
 	ens = str(conf.get("itemEnabled", "") or "")
-	ti = _tree_interceptor_for_quicknav_probe()
+	ti = _tree_interceptor_for_quicknav_probe(build)
 	st = _browse_probe_state(ti)
 	full_key = (ors, ens, st)
 	if full_key == _seq_cache_key and _active_sequence:
@@ -474,8 +511,12 @@ def reload_from_config() -> None:
 
 def apply_focus_context(is_virtual_buffer: bool, plugin) -> None:
 	global rotorItem, lastRotorItemIdInVD, lastRotorItemInVDSaved, _seq_cache_key
+	keep_id: str | None = None
+	if _active_sequence and 0 <= rotorItem < len(_active_sequence):
+		keep_id = _active_sequence[rotorItem][0]
 	# Read sequence before busting caches (active_sequence() skips refresh if list non-empty).
 	if not lastRotorItemInVDSaved and not is_virtual_buffer:
+		keep_id = None
 		seq = active_sequence()
 		if seq and 0 <= rotorItem < len(seq):
 			lastRotorItemIdInVD = seq[rotorItem][0]
@@ -489,12 +530,12 @@ def apply_focus_context(is_virtual_buffer: bool, plugin) -> None:
 		restore_vd = lastRotorItemIdInVD
 		lastRotorItemInVDSaved = False
 	refresh_active_sequence()
+	ids = [p[0] for p in _active_sequence]
 	if will_restore:
-		if restore_vd:
-			ids = [p[0] for p in _active_sequence]
-			rotorItem = ids.index(restore_vd) if restore_vd in ids else 0
-		else:
-			rotorItem = 0
+		rotorItem = ids.index(restore_vd) if restore_vd in ids else 0
+	elif keep_id in ids:
+		# Items can be filtered differently after a refresh: follow the item, not its index.
+		rotorItem = ids.index(keep_id)
 	clamp_rotor_index()
 	plugin.bindRotorGES()
 
@@ -541,7 +582,7 @@ def advance_rotor(delta: int) -> str:
 	preserve_id: Optional[str] = None
 	if _active_sequence and 0 <= rotorItem < len(_active_sequence):
 		preserve_id = _active_sequence[rotorItem][0]
-	refresh_active_sequence()
+	refresh_active_sequence(build=True)
 	seq = _active_sequence if _active_sequence else active_sequence()
 	if not seq:
 		return ROTOR_LABELS[RotorId.default.value]
